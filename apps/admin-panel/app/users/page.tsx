@@ -4,6 +4,7 @@ import Shell from '../../components/Shell';
 import { Users, UserCheck, UserX, AlertTriangle } from 'lucide-react';
 import { api } from '../../lib/api';
 import Pagination from '../../components/Pagination';
+import { useToast } from '../../components/Toast';
 
 type User = {
   id: string; name: string; phone: string; email: string;
@@ -42,6 +43,7 @@ function SkeletonRow() {
 }
 
 export default function UsersPage() {
+  const { toast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
@@ -71,12 +73,22 @@ export default function UsersPage() {
   useEffect(() => { setPage(1); }, [q]);
 
   const suspendUser = async (id: string) => {
-    try { await api.post(`/users/${id}/suspend`); } catch { /* optimistic */ }
-    setUsers((prev) => prev.map((u) => u.id === id ? { ...u, isActive: false } : u));
+    try {
+      await api.post(`/users/${id}/suspend`);
+      setUsers((prev) => prev.map((u) => u.id === id ? { ...u, isActive: false } : u));
+      toast('User suspended');
+    } catch (e: any) {
+      toast(e.message || 'Failed to suspend user', 'error');
+    }
   };
   const unsuspendUser = async (id: string) => {
-    try { await api.post(`/users/${id}/unsuspend`); } catch { /* optimistic */ }
-    setUsers((prev) => prev.map((u) => u.id === id ? { ...u, isActive: true } : u));
+    try {
+      await api.post(`/users/${id}/unsuspend`);
+      setUsers((prev) => prev.map((u) => u.id === id ? { ...u, isActive: true } : u));
+      toast('User restored');
+    } catch (e: any) {
+      toast(e.message || 'Failed to restore user', 'error');
+    }
   };
 
   const filtered = users;

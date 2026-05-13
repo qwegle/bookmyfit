@@ -7,14 +7,6 @@ import { IconArrowLeft, IconBell, IconBolt, IconCheck, IconDumbbell, IconCreditC
 import { miscApi, api } from '../lib/api';
 import AuroraBackground from '../components/AuroraBackground';
 
-const FALLBACK_NOTIFS = [
-  { id: 'n1', type: 'promotional', title: 'Summer Sale! 40% off Elite', body: 'Upgrade to Elite plan and train at any gym this summer.', time: '2h ago', read: false, createdAt: new Date(Date.now() - 2 * 3600000).toISOString() },
-  { id: 'n2', type: 'check_in', title: 'Check-in Confirmed', body: 'PowerZone Fitness · 6:32 AM', time: '5h ago', read: false, createdAt: new Date(Date.now() - 5 * 3600000).toISOString() },
-  { id: 'n3', type: 'check_in', title: '7-Day Streak!', body: "Keep it up! You're on a roll.", time: '1d ago', read: true, createdAt: new Date(Date.now() - 86400000).toISOString() },
-  { id: 'n4', type: 'subscription_expiry', title: 'Plan Renewing Soon', body: 'Your Individual plan expires in 6 days.', time: '2d ago', read: true, createdAt: new Date(Date.now() - 2 * 86400000).toISOString() },
-  { id: 'n5', type: 'payment', title: 'Payment Confirmed', body: 'Elite Plan payment of ₹1,499 received.', time: '5d ago', read: true, createdAt: new Date(Date.now() - 5 * 86400000).toISOString() },
-];
-
 const TYPE_COLOR: Record<string, string> = {
   subscription_expiry: 'rgba(255,138,0,0.9)',
   check_in: colors.accent,
@@ -34,13 +26,13 @@ function getTypeIcon(type: string) {
 
 function groupNotifications(notifs: any[]) {
   const now = Date.now();
-  const groups: Record<string, any[]> = { 'Today': [], 'This Week': [], 'Earlier': [] };
+  const groups: Record<string, any[]> = { Today: [], 'This Week': [], Earlier: [] };
   notifs.forEach((n) => {
     const ts = n.createdAt ? new Date(n.createdAt).getTime() : now;
     const diff = now - ts;
-    if (diff < 86400000) groups['Today'].push(n);
+    if (diff < 86400000) groups.Today.push(n);
     else if (diff < 7 * 86400000) groups['This Week'].push(n);
-    else groups['Earlier'].push(n);
+    else groups.Earlier.push(n);
   });
   return groups;
 }
@@ -53,26 +45,26 @@ export default function NotificationsScreen() {
     miscApi.notifications()
       .then((data: any) => {
         const list = Array.isArray(data) ? data : data?.notifications || data?.data || [];
-        setNotifs(list.length > 0 ? list : FALLBACK_NOTIFS);
+        setNotifs(list);
       })
-      .catch(() => setNotifs(FALLBACK_NOTIFS))
+      .catch(() => setNotifs([]))
       .finally(() => setLoading(false));
   }, []);
 
   const markAllRead = () => {
-    setNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
+    setNotifs((prev) => prev.map((n) => ({ ...n, read: true, isRead: true })));
   };
 
   const markOneRead = async (n: any) => {
     if (n.read ?? n.isRead) return;
     const id = n.id || n._id;
-    setNotifs((prev) => prev.map((x) => (x.id || x._id) === id ? { ...x, read: true } : x));
+    setNotifs((prev) => prev.map((x) => (x.id || x._id) === id ? { ...x, read: true, isRead: true } : x));
     try {
       if (id) await api.post(`/notifications/${id}/read`);
     } catch {}
   };
 
-  const unreadCount = notifs.filter((n) => !n.read).length;
+  const unreadCount = notifs.filter((n) => !(n.read ?? n.isRead)).length;
   const grouped = groupNotifications(notifs);
 
   if (!loading && notifs.length === 0) {
@@ -100,53 +92,53 @@ export default function NotificationsScreen() {
     <AuroraBackground>
       <SafeAreaView style={{ flex: 1 }}>
         <View style={s.header}>
-        <TouchableOpacity style={s.back} onPress={() => router.back()}>
-          <IconArrowLeft size={18} color="#fff" />
-        </TouchableOpacity>
-        <Text style={s.headerTitle}>Notifications</Text>
-        {unreadCount > 0 ? (
-          <TouchableOpacity onPress={markAllRead}>
-            <Text style={s.markAll}>Mark all read</Text>
+          <TouchableOpacity style={s.back} onPress={() => router.back()}>
+            <IconArrowLeft size={18} color="#fff" />
           </TouchableOpacity>
-        ) : (
-          <View style={{ width: 80 }} />
-        )}
-      </View>
+          <Text style={s.headerTitle}>Notifications</Text>
+          {unreadCount > 0 ? (
+            <TouchableOpacity onPress={markAllRead}>
+              <Text style={s.markAll}>Mark all read</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={{ width: 80 }} />
+          )}
+        </View>
 
-      <ScrollView contentContainerStyle={s.list} showsVerticalScrollIndicator={false}>
-        {Object.entries(grouped).map(([group, groupNotifs]) => {
-          if (groupNotifs.length === 0) return null;
-          return (
-            <View key={group}>
-              <Text style={s.groupHeader}>{group}</Text>
-              {(groupNotifs as any[]).map((n: any, i: number) => {
-                const Icon = getTypeIcon(n.type || n.notificationType || '');
-                const ic = TYPE_COLOR[n.type || n.notificationType || ''] || colors.t;
-                const isRead = n.read ?? n.isRead ?? false;
-                const title = n.title || n.subject || '';
-                const body = n.body || n.message || n.description || '';
-                const time = n.time || (n.createdAt ? new Date(n.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '');
-                return (
-                  <TouchableOpacity key={n.id || n._id || i} style={[s.card, !isRead && s.cardUnread]} onPress={() => markOneRead(n)} activeOpacity={0.75}>
-                    <View style={[s.iconWrap, { borderColor: ic + '44' }]}>
-                      <Icon size={14} color={ic} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <View style={s.titleRow}>
-                        <Text style={s.title} numberOfLines={1}>{title}</Text>
-                        {!isRead && <View style={s.dot} />}
+        <ScrollView contentContainerStyle={s.list} showsVerticalScrollIndicator={false}>
+          {Object.entries(grouped).map(([group, groupNotifs]) => {
+            if (groupNotifs.length === 0) return null;
+            return (
+              <View key={group}>
+                <Text style={s.groupHeader}>{group}</Text>
+                {groupNotifs.map((n: any, i: number) => {
+                  const Icon = getTypeIcon(n.type || n.notificationType || '');
+                  const ic = TYPE_COLOR[n.type || n.notificationType || ''] || colors.t;
+                  const isRead = n.read ?? n.isRead ?? false;
+                  const title = n.title || n.subject || '';
+                  const body = n.body || n.message || n.description || '';
+                  const time = n.time || (n.createdAt ? new Date(n.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '');
+                  return (
+                    <TouchableOpacity key={n.id || n._id || i} style={[s.card, !isRead && s.cardUnread]} onPress={() => markOneRead(n)} activeOpacity={0.75}>
+                      <View style={[s.iconWrap, { borderColor: ic + '44' }]}>
+                        <Icon size={14} color={ic} />
                       </View>
-                      <Text style={s.body} numberOfLines={2}>{body}</Text>
-                      <Text style={s.time}>{time}</Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          );
-        })}
-      </ScrollView>
-    </SafeAreaView>
+                      <View style={{ flex: 1 }}>
+                        <View style={s.titleRow}>
+                          <Text style={s.title} numberOfLines={1}>{title}</Text>
+                          {!isRead && <View style={s.dot} />}
+                        </View>
+                        <Text style={s.body} numberOfLines={2}>{body}</Text>
+                        <Text style={s.time}>{time}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            );
+          })}
+        </ScrollView>
+      </SafeAreaView>
     </AuroraBackground>
   );
 }

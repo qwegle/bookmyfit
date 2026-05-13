@@ -276,7 +276,7 @@ const FRAME_SIZE = 220;
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
-  content: { paddingHorizontal: spacing.xl, paddingBottom: 132, paddingTop: spacing.lg },
+  content: { paddingHorizontal: spacing.xl, paddingBottom: 36, paddingTop: spacing.lg },
 
   title: { fontFamily: fonts.serif, fontSize: 28, color: colors.text, marginBottom: 4 },
   subtitle: { fontFamily: fonts.sans, fontSize: 14, color: colors.t, marginBottom: spacing.xxl },

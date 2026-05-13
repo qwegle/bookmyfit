@@ -7,13 +7,6 @@ import { colors, fonts, radius } from '../theme/brand';
 import { IconArrowLeft, IconBolt, IconCheck, IconClock, IconDumbbell } from '../components/Icons';
 import { checkinApi } from '../lib/api';
 
-const FALLBACK_VISITS = [
-  { id: 'v1', gym: { name: 'PowerZone Fitness' }, createdAt: new Date().toISOString(), checkoutAt: new Date(Date.now() - 105 * 60000).toISOString(), status: 'success', plan: { name: 'Elite Plan' } },
-  { id: 'v2', gym: { name: 'FitHub Pro' }, createdAt: new Date(Date.now() - 86400000).toISOString(), checkoutAt: new Date(Date.now() - 86400000 - 90 * 60000).toISOString(), status: 'success', plan: { name: 'Individual Plan' } },
-  { id: 'v3', gym: { name: 'PowerZone Fitness' }, createdAt: new Date(Date.now() - 2 * 86400000).toISOString(), checkoutAt: new Date(Date.now() - 2 * 86400000 - 105 * 60000).toISOString(), status: 'success', plan: { name: 'Elite Plan' } },
-  { id: 'v4', gym: { name: 'IronBody Gym' }, createdAt: new Date(Date.now() - 3 * 86400000).toISOString(), checkoutAt: null, status: 'failed', plan: { name: 'Individual Plan' } },
-];
-
 function formatDate(dateStr: string) {
   const d = new Date(dateStr);
   const today = new Date();
@@ -65,9 +58,9 @@ export default function HistoryScreen() {
     checkinApi.history(50)
       .then((data: any) => {
         const list = Array.isArray(data) ? data : data?.checkins || data?.data || [];
-        setVisits(list.length > 0 ? list : FALLBACK_VISITS);
+        setVisits(list);
       })
-      .catch(() => setVisits(FALLBACK_VISITS))
+      .catch(() => setVisits([]))
       .finally(() => setLoading(false));
   }, []);
 

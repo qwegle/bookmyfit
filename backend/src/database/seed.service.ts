@@ -23,7 +23,15 @@ export class SeedService implements OnApplicationBootstrap {
   ) {}
 
   async onApplicationBootstrap() {
-    if (process.env.SEED_ON_BOOT === 'false') return;
+    const seedEnabled = process.env.SEED_ON_BOOT === 'true';
+    if (!seedEnabled) {
+      this.log.log('Seed on boot disabled. Set SEED_ON_BOOT=true only for local/demo setup.');
+      return;
+    }
+    if (process.env.NODE_ENV === 'production') {
+      this.log.warn('SEED_ON_BOOT=true ignored in production.');
+      return;
+    }
     await this.seedUsers();
     await this.seedGyms();
     await this.seedBBSRGyms();

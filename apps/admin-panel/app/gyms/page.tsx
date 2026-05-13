@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Shell from '../../components/Shell';
 import { CheckCircle, Clock, XCircle, PauseCircle, Star, ChevronDown, AlertTriangle } from 'lucide-react';
 import { api } from '../../lib/api';
+import { useToast } from '../../components/Toast';
 import Pagination from '../../components/Pagination';
 
 type Gym = {
@@ -48,6 +49,7 @@ function SkeletonRow() {
 }
 
 export default function GymsPage() {
+  const { toast } = useToast();
   const [gyms, setGyms] = useState<Gym[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
@@ -81,17 +83,32 @@ export default function GymsPage() {
   useEffect(() => { setPage(1); }, [q]);
 
   const approve = async (id: string) => {
-    try { await api.post(`/gyms/${id}/approve`); } catch { /* optimistic */ }
-    setGyms((prev) => prev.map((g) => g.id === id ? { ...g, status: 'active' } : g));
+    try {
+      await api.post(`/gyms/${id}/approve`);
+      setGyms((prev) => prev.map((g) => g.id === id ? { ...g, status: 'active' } : g));
+      toast('Gym approved');
+    } catch (e: any) {
+      toast(e.message || 'Failed to approve gym', 'error');
+    }
   };
   const suspend = async (id: string) => {
-    try { await api.post(`/gyms/${id}/suspend`); } catch { /* optimistic */ }
-    setGyms((prev) => prev.map((g) => g.id === id ? { ...g, status: 'suspended' } : g));
+    try {
+      await api.post(`/gyms/${id}/suspend`);
+      setGyms((prev) => prev.map((g) => g.id === id ? { ...g, status: 'suspended' } : g));
+      toast('Gym suspended');
+    } catch (e: any) {
+      toast(e.message || 'Failed to suspend gym', 'error');
+    }
   };
-  const setTier = async (id: string, tier: string) => {
-    try { await api.put(`/gyms/${id}/tier`, { tier }); } catch { /* optimistic */ }
-    setGyms((prev) => prev.map((g) => g.id === id ? { ...g, tier } : g));
-    setTierDropdown(null);
+  const setTier = async (gym: Gym, tier: string) => {
+    try {
+      await api.put(`/gyms/${gym.id}/tier`, { tier, commissionRate: gym.commissionRate ?? 15 });
+      setGyms((prev) => prev.map((g) => g.id === gym.id ? { ...g, tier } : g));
+      setTierDropdown(null);
+      toast('Gym tier updated');
+    } catch (e: any) {
+      toast(e.message || 'Failed to update gym tier', 'error');
+    }
   };
 
   const filtered = gyms.filter((g) => {
@@ -197,7 +214,7 @@ export default function GymsPage() {
                           {tierDropdown === g.id && (
                             <div className="glass" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 50, minWidth: 160, padding: '6px 0' }}>
                               {TIERS.map((t) => (
-                                <button key={t} onClick={() => setTier(g.id, t)}
+                                <button key={t} onClick={() => setTier(g, t)}
                                   style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 12, color: g.tier === t ? 'var(--accent)' : 'var(--t)', background: 'transparent', cursor: 'pointer' }}>
                                   {t} {g.tier === t && <span style={{ color:'var(--accent)' }}>&#10003;</span>}
                                 </button>

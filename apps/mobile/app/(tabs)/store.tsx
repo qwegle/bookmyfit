@@ -7,25 +7,9 @@ import { IconCart, IconTag } from '../../components/Icons';
 import { storeApi } from '../../lib/api';
 import AuroraBackground from '../../components/AuroraBackground';
 import { addToCart, cartCount as getCartCount } from '../cart';
+import { productImage } from '../../lib/imageFallbacks';
 
 const CATS = ['All', 'Supplements', 'Accessories', 'Apparel', 'Equipment'];
-
-const DUMMY_IMAGES: Record<string, string> = {
-  Supplements: 'https://images.unsplash.com/photo-1593095948071-474c5cc2989d?w=400&q=80',
-  Accessories: 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=400&q=80',
-  Apparel: 'https://images.unsplash.com/photo-1540497077202-7c8a3999166f?w=400&q=80',
-  Equipment: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&q=80',
-  default: 'https://images.unsplash.com/photo-1584735935682-2f2b69dff9d2?w=400&q=80',
-};
-
-const FALLBACK_PRODUCTS = [
-  { id: 'p1', name: 'Whey Pro 2kg', brand: 'MuscleBlaze', price: 2199, category: 'Supplements', img: DUMMY_IMAGES.Supplements, aurora: 'rgba(0,212,106,0.55)' },
-  { id: 'p2', name: 'Pro Shaker Cup', brand: 'GNC Sports', price: 449, category: 'Accessories', img: DUMMY_IMAGES.default, aurora: 'rgba(0,175,255,0.55)' },
-  { id: 'p3', name: 'Lifting Gloves', brand: 'Harbinger', price: 799, category: 'Accessories', img: DUMMY_IMAGES.Accessories, aurora: 'rgba(155,0,255,0.55)' },
-  { id: 'p4', name: 'Resistance Band Set', brand: 'Boldfit', price: 599, category: 'Equipment', img: DUMMY_IMAGES.Equipment, aurora: 'rgba(255,138,0,0.55)' },
-  { id: 'p5', name: 'BCAA 250g', brand: 'AS-IT-IS', price: 899, category: 'Supplements', img: DUMMY_IMAGES.Supplements, aurora: 'rgba(0,212,106,0.55)' },
-  { id: 'p6', name: 'Training T-Shirt', brand: 'Nivia Sports', price: 649, category: 'Apparel', img: DUMMY_IMAGES.Apparel, aurora: 'rgba(0,175,255,0.55)' },
-];
 
 const AURORA_COLORS = ['rgba(0,212,106,0.55)', 'rgba(0,175,255,0.55)', 'rgba(155,0,255,0.55)', 'rgba(255,138,0,0.55)'];
 
@@ -35,27 +19,33 @@ export default function Store() {
   const [loading, setLoading] = useState(true);
   const [cartCount, setCartCount] = useState(getCartCount());
   const [search, setSearch] = useState('');
+  const [error, setError] = useState('');
 
   // Refresh badge when returning from cart
   useFocusEffect(useCallback(() => { setCartCount(getCartCount()); }, []));
 
   useEffect(() => {
     setLoading(true);
+    setError('');
     storeApi.products(activeCat !== 'All' ? activeCat.toLowerCase() : undefined)
       .then((data: any) => {
         const list = Array.isArray(data) ? data : data?.products || data?.data || [];
-        setProducts(list.length > 0 ? list : FALLBACK_PRODUCTS.filter((p) => activeCat === 'All' || p.category === activeCat));
+        setProducts(list);
       })
-      .catch(() => setProducts(FALLBACK_PRODUCTS.filter((p) => activeCat === 'All' || p.category === activeCat)))
+      .catch((e: any) => {
+        setProducts([]);
+        setError(e?.message || 'Could not load store products.');
+      })
       .finally(() => setLoading(false));
   }, [activeCat]);
 
   const handleAddToCart = (product: any) => {
+    const image = productImage(product);
     addToCart({
       productId: String(product.id || product._id),
       name: product.name || product.productName || 'Product',
       price: product.price ?? product.mrp ?? 0,
-      image: product.img || product.imageUrl || product.image,
+      image,
       category: product.category,
     });
     setCartCount(getCartCount());
@@ -128,7 +118,7 @@ export default function Store() {
           <View style={s.emptyState}>
             <IconTag size={40} color={colors.accent} />
             <Text style={s.emptyTitle}>No products found</Text>
-            <Text style={s.emptyBody}>{searchTerm ? 'Try another search term or category' : `Check back later for ${activeCat} products`}</Text>
+            <Text style={s.emptyBody}>{error || (searchTerm ? 'Try another search term or category' : `Check back later for ${activeCat} products`)}</Text>
           </View>
         ) : (
           <View style={s.grid}>
@@ -136,7 +126,7 @@ export default function Store() {
               const name = p.name || p.productName || 'Product';
               const brand = p.brand || p.brandName || '';
               const price = p.price || p.mrp || 0;
-              const img = p.image || p.images?.[0] || p.img || DUMMY_IMAGES[p.category] || DUMMY_IMAGES.default;
+              const img = productImage(p);
               const aurora = p.aurora || AURORA_COLORS[idx % AURORA_COLORS.length];
               return (
                 <TouchableOpacity key={p.id || p._id || idx} style={s.card} activeOpacity={0.9} onPress={() => router.push(`/product/${p.id || p._id}`)}>
@@ -167,7 +157,7 @@ export default function Store() {
 
 const s = StyleSheet.create({
   scroll: { flex: 1 },
-  container: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 132 },
+  container: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 36 },
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   title: { fontFamily: fonts.serif, fontSize: 26, color: '#fff', letterSpacing: -0.5 },
   cartWrap: { position: 'relative', width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },

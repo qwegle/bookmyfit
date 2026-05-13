@@ -24,17 +24,6 @@ const TIER_COLORS: Record<string, string> = {
   elite: '#FBBF24', pro: colors.accent, individual: '#60A5FA',
 };
 
-const FALLBACK_GYMS: NearbyGym[] = [
-  { id: 'bf67d2fc-4b70-43e3-93c4-da533e5caa09', name: "Cult.fit Bhubaneswar",       address: 'Patia',            latitude: 20.3413, longitude: 85.8157, rating: 4.8, tier: 'elite' },
-  { id: 'c5b25fd2-c918-4bf4-a7c5-35170f0155b1', name: "Gold's Gym Bhubaneswar",     address: 'Chandrasekharpur', latitude: 20.3110, longitude: 85.8186, rating: 4.7, tier: 'elite' },
-  { id: '547b28de-54cf-4f3a-a036-c1f9294066e6', name: 'CrossFit Bhubaneswar',       address: 'Jaydev Vihar',     latitude: 20.3006, longitude: 85.8290, rating: 4.6, tier: 'pro' },
-  { id: '9275177c-765d-4ad8-ac13-6cda17ba4edc', name: 'Fitness First Bhubaneswar',  address: 'IRC Village',      latitude: 20.2996, longitude: 85.8220, rating: 4.5, tier: 'pro' },
-  { id: '554d5de4-38c0-4b87-a2f4-51e0124e859f', name: 'Anytime Fitness',            address: 'Saheed Nagar',     latitude: 20.2888, longitude: 85.8480, rating: 4.5, tier: 'pro' },
-  { id: '28ec2ef5-a659-41f3-aef2-0a0be52f4f16', name: 'Iron House Gym',             address: 'Nayapalli',        latitude: 20.2820, longitude: 85.8276, rating: 4.4, tier: 'individual' },
-  { id: 'f25d299d-8f81-4dbb-a8aa-8980a5c61769', name: 'PowerHouse Fitness',         address: 'Khandagiri',       latitude: 20.2489, longitude: 85.7829, rating: 4.3, tier: 'individual' },
-  { id: 'bf3669fb-302b-47a0-be49-34d38233116f', name: 'Flex Fitness Studio',        address: 'Damana',           latitude: 20.3149, longitude: 85.8170, rating: 4.2, tier: 'individual' },
-];
-
 // Bhubaneswar bounding box
 const MIN_LAT = 20.22, MAX_LAT = 20.40, MIN_LNG = 85.74, MAX_LNG = 85.90;
 
@@ -51,6 +40,7 @@ export default function NearbyScreen() {
   const [userPos, setUserPos] = useState<{ x: number; y: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -70,9 +60,16 @@ export default function NearbyScreen() {
         if (res.ok) {
           const data = await res.json();
           const items: NearbyGym[] = (data.items || data || []).filter((g: NearbyGym) => g.latitude && g.longitude);
-          setGyms(items.length > 0 ? items : FALLBACK_GYMS);
-        } else setGyms(FALLBACK_GYMS);
-      } catch { setGyms(FALLBACK_GYMS); }
+          setGyms(items);
+          setError(null);
+        } else {
+          setGyms([]);
+          setError('Could not load gyms from the API.');
+        }
+      } catch {
+        setGyms([]);
+        setError('Could not load gyms from the API.');
+      }
       setLoading(false);
     })();
   }, []);
@@ -187,13 +184,19 @@ export default function NearbyScreen() {
                       <Text style={s.ratingText}>{item.rating.toFixed(1)}</Text>
                     </View>
                   )}
-                  <TouchableOpacity style={[s.viewBtn, sel && { borderColor: tc, backgroundColor: tc + '18' }]} onPress={() => router.push({ pathname: '/gym/[id]', params: { id: item.id, fallbackName: item.name, fallbackAddress: item.address || 'Bhubaneswar', fallbackRating: String(item.rating || ''), fallbackTier: item.tier || 'pro' } } as any)} activeOpacity={0.85}>
+                  <TouchableOpacity style={[s.viewBtn, sel && { borderColor: tc, backgroundColor: tc + '18' }]} onPress={() => router.push({ pathname: '/gym/[id]', params: { id: item.id } } as any)} activeOpacity={0.85}>
                     <Text style={[s.viewBtnText, sel && { color: tc }]}>View Details</Text>
                   </TouchableOpacity>
                 </View>
               </TouchableOpacity>
             );
           }}
+          ListEmptyComponent={!loading ? (
+            <View style={s.emptyState}>
+              <Text style={s.emptyTitle}>{error ? 'Gyms unavailable' : 'No mapped gyms found'}</Text>
+              <Text style={s.emptySub}>{error || 'Gyms with latitude and longitude will appear here.'}</Text>
+            </View>
+          ) : null}
         />
       </View>
     </View>
@@ -252,4 +255,7 @@ const s = StyleSheet.create({
   ratingText: { fontFamily: fonts.sansMedium, fontSize: 12, color: '#FBBF24' },
   viewBtn:     { alignSelf: 'flex-start', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 6 },
   viewBtnText: { fontFamily: fonts.sansBold, fontSize: 11, color: colors.t2 },
+  emptyState: { width: W - 36, alignItems: 'center', justifyContent: 'center', paddingVertical: 28, paddingHorizontal: 20 },
+  emptyTitle: { fontFamily: fonts.sansBold, fontSize: 15, color: '#fff', marginBottom: 6 },
+  emptySub: { fontFamily: fonts.sans, fontSize: 12, color: colors.t2, textAlign: 'center' },
 });

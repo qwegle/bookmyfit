@@ -1,8 +1,6 @@
-import { View, StyleSheet, Dimensions } from 'react-native';
+import { View, StyleSheet, useWindowDimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../theme/brand';
-
-const { width, height } = Dimensions.get('window');
 
 interface Props {
   children: React.ReactNode;
@@ -21,6 +19,9 @@ const AURORA_CONFIGS: Record<string, { c1: string; c2: string; c3: string }> = {
 
 export default function AuroraBackground({ children, variant = 'default', style }: Props) {
   const cfg = AURORA_CONFIGS[variant] || AURORA_CONFIGS.default;
+  const { width, height } = useWindowDimensions();
+  const blobSize = Math.max(width || 1, height || 1) * 1.2;
+  const blob = { width: blobSize, height: blobSize, borderRadius: blobSize / 2 };
 
   return (
     <View style={[styles.root, style]}>
@@ -32,21 +33,21 @@ export default function AuroraBackground({ children, variant = 'default', style 
         colors={[cfg.c1, 'transparent']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={[styles.blob, styles.blobTopLeft]}
+        style={[styles.blob, blob, { top: -blobSize * 0.34, left: -blobSize * 0.28 }]}
       />
       {/* Aurora blob 2 — top-right blue */}
       <LinearGradient
         colors={[cfg.c2, 'transparent']}
         start={{ x: 1, y: 0 }}
         end={{ x: 0, y: 1 }}
-        style={[styles.blob, styles.blobTopRight]}
+        style={[styles.blob, blob, { top: -blobSize * 0.28, right: -blobSize * 0.28 }]}
       />
       {/* Aurora blob 3 — center-bottom purple */}
       <LinearGradient
         colors={[cfg.c3, 'transparent']}
         start={{ x: 0.5, y: 1 }}
         end={{ x: 0.5, y: 0 }}
-        style={[styles.blob, styles.blobBottom]}
+        style={[styles.blob, blob, { bottom: -blobSize * 0.34, left: -blobSize * 0.1 }]}
       />
 
       {/* Content */}
@@ -55,19 +56,11 @@ export default function AuroraBackground({ children, variant = 'default', style 
   );
 }
 
-const BLOB_SIZE = width * 1.4;
-
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
+  root: { flex: 1, minHeight: 0, backgroundColor: colors.bg, overflow: 'hidden' },
   base: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.bg },
   blob: {
     position: 'absolute',
-    width: BLOB_SIZE,
-    height: BLOB_SIZE,
-    borderRadius: BLOB_SIZE / 2,
   },
-  blobTopLeft: { top: -BLOB_SIZE * 0.4, left: -BLOB_SIZE * 0.3 },
-  blobTopRight: { top: -BLOB_SIZE * 0.3, right: -BLOB_SIZE * 0.3 },
-  blobBottom: { bottom: -BLOB_SIZE * 0.4, left: -BLOB_SIZE * 0.1 },
-  content: { flex: 1 },
+  content: { flex: 1, minHeight: 0 },
 });

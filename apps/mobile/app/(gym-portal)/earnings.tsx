@@ -6,7 +6,7 @@ import { colors, fonts, radius } from '../../theme/brand';
 import { IconArrowLeft, IconDollar, IconBolt, IconShopping, IconDumbbell } from '../../components/Icons';
 import { gymStaffApi, api } from '../../lib/api';
 
-const FALLBACK = {
+const EMPTY_EARNINGS = {
   totalEarned: 0,
   month: new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
   growthPercent: 0,
@@ -20,14 +20,14 @@ const FALLBACK = {
   recentSettlements: [] as any[],
 };
 
-type EarningsData = typeof FALLBACK;
+type EarningsData = typeof EMPTY_EARNINGS;
 
 function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN');
 }
 
 export default function Earnings() {
-  const [data, setData] = useState<EarningsData>(FALLBACK);
+  const [data, setData] = useState<EarningsData>(EMPTY_EARNINGS);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -38,14 +38,14 @@ export default function Earnings() {
         const total = Number(current.grossRevenue || 0);
         const comm = Number(current.commission || 0);
         setData({
-          ...FALLBACK,
+          ...EMPTY_EARNINGS,
           totalEarned: total,
           netPayout: Number(current.netPayout || total - comm),
           commission: comm,
           breakdown: [
-            { ...FALLBACK.breakdown[0], amount: Number(current.individualPool || 0) },
-            { ...FALLBACK.breakdown[1], amount: Number(current.dayPassPool || 0) },
-            { ...FALLBACK.breakdown[2], amount: Number(current.multiGymPool || 0) },
+            { ...EMPTY_EARNINGS.breakdown[0], amount: Number(current.individualPool || 0) },
+            { ...EMPTY_EARNINGS.breakdown[1], amount: Number(current.dayPassPool || 0) },
+            { ...EMPTY_EARNINGS.breakdown[2], amount: Number(current.multiGymPool || 0) },
           ],
           recentSettlements: history.slice(0, 5),
         });
@@ -57,10 +57,10 @@ export default function Earnings() {
   const handleRequestPayout = async () => {
     try {
       await api.post('/settlements/request-payout', {});
+      Alert.alert('Request Submitted', 'Your payout request has been submitted. Settlements are processed every Monday.');
     } catch {
-      // Non-blocking — proceed to show confirmation regardless
+      Alert.alert('Request Failed', 'Could not submit the payout request. Please try again.');
     }
-    Alert.alert('Request Submitted', 'Your payout request has been submitted. Settlements are processed every Monday.');
   };
 
   return (
@@ -150,7 +150,7 @@ export default function Earnings() {
             <Text style={s.payoutBtnText}>Request Payout</Text>
           </TouchableOpacity>
 
-          <View style={{ height: 40 }} />
+          <View style={{ height: 8 }} />
         </ScrollView>
       )}
     </SafeAreaView>
@@ -167,7 +167,7 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center',
   },
   headerTitle: { fontFamily: fonts.serif, fontSize: 20, color: '#fff' },
-  scroll: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 132 },
+  scroll: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 36 },
   heroCard: {
     height: 160, borderRadius: radius.xl, overflow: 'hidden',
     marginBottom: 24, position: 'relative',

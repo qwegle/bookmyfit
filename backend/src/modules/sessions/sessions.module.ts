@@ -321,6 +321,9 @@ export class SessionsService {
   async generateSlotsForGym(gymId: string, daysAhead: number) {
     const today = todayIST();
     const scheduleRows = await this.scheduleRepo.find({ where: { gymId } });
+    if (scheduleRows.length === 0) {
+      return { generated: 0, reason: 'schedule_not_configured' };
+    }
     const types = await this.typeRepo.find({ where: { gymId, isActive: true } });
     const rules = await this.ruleRepo.find({ where: { gymId, isActive: true } });
     const stdType = await this.ensureGymWorkout(gymId);

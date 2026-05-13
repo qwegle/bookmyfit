@@ -13,6 +13,7 @@ import {
 import { gymsApi, subscriptionsApi, api } from '../../lib/api';
 import { accessLabelForSubscription, getActiveSubscriptionAccess, normalizeSubscriptionList, subscriptionPlanType } from '../../lib/subscriptionAccess';
 import AuroraBackground from '../../components/AuroraBackground';
+import { DEFAULT_GYM_IMAGE, firstImage } from '../../lib/imageFallbacks';
 
 const { width } = Dimensions.get('window');
 
@@ -70,6 +71,31 @@ function formatDateLabel(value: any) {
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+function formatClockTime(value: any) {
+  if (!value) return '';
+  const match = String(value).trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return String(value);
+
+  const hour = Number(match[1]);
+  const minute = match[2];
+  if (!Number.isFinite(hour) || hour < 0 || hour > 23) return String(value);
+
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${minute} ${suffix}`;
+}
+
+function formatClockRange(start?: any, end?: any, fallback?: any) {
+  if (start && end) return `${formatClockTime(start)} - ${formatClockTime(end)}`;
+
+  const text = fallback ? String(fallback) : '';
+  const parts = text.split(/\s*[-–]\s*/);
+  if (parts.length === 2 && /^\d{1,2}:\d{2}$/.test(parts[0]) && /^\d{1,2}:\d{2}$/.test(parts[1])) {
+    return `${formatClockTime(parts[0])} - ${formatClockTime(parts[1])}`;
+  }
+  return text;
+}
+
 function SkeletonRect({ h, style }: { h: number; style?: any }) {
   return <View style={[{ height: h, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.07)' }, style]} />;
 }
@@ -77,7 +103,7 @@ function SkeletonRect({ h, style }: { h: number; style?: any }) {
 export default function GymDetail() {
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 34);
-  const { id, fallbackName, fallbackAddress, fallbackRating, fallbackTier } = useLocalSearchParams<{ id: string; fallbackName?: string; fallbackAddress?: string; fallbackRating?: string; fallbackTier?: string }>();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const [gym, setGym] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'About' | 'Sessions' | 'Trainers' | 'Reviews'>('About');
@@ -86,13 +112,7 @@ export default function GymDetail() {
   const [reviews, setReviews] = useState<any[]>([]);
   const [gymPlans, setGymPlans] = useState<any[]>([]);
   const [sessionSlots, setSessionSlots] = useState<any[]>([]);
-  const FALLBACK_SESSION_TYPES = [
-    { id: 'gym', name: 'Gym Workout', color: '#3DFF54' },
-    { id: 'cardio', name: 'Cardio', color: '#FB923C' },
-    { id: 'yoga', name: 'Yoga', color: '#22D3EE' },
-    { id: 'hiit', name: 'HIIT', color: '#F59E0B' },
-  ];
-  const [sessionTypes, setSessionTypes] = useState<any[]>(FALLBACK_SESSION_TYPES);
+  const [sessionTypes, setSessionTypes] = useState<any[]>([]);
   const [activeTypeFilter, setActiveTypeFilter] = useState<string>('all');
   const [slotDate, setSlotDate] = useState<string>(new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().split('T')[0]);
   const [bookingLoading, setBookingLoading] = useState<string | null>(null);
@@ -127,10 +147,9 @@ export default function GymDetail() {
     api.get(`/sessions/types/${id}`)
       .then((data: any) => {
         const list = (Array.isArray(data) ? data : []).filter((t: any) => t.id !== 'all');
-        if (list.length > 0) setSessionTypes(list);
-        // else keep FALLBACK_SESSION_TYPES
+        setSessionTypes(list);
       })
-      .catch(() => { /* keep fallback */ });
+      .catch(() => setSessionTypes([]));
 
     api.get(`/trainers?gymId=${id}`)
       .then((data: any) => {
@@ -147,22 +166,23 @@ export default function GymDetail() {
       .catch(() => setReviews([]));
   }, [id]);
 
-  const tier = gym?.tier || gym?.tierName || fallbackTier || 'Elite';
-  const name = gym?.name || fallbackName || 'Gym';
-  const rating = gym?.rating || gym?.avgRating || (fallbackRating ? Number(fallbackRating) : '—');
+  const tier = gym?.tier || gym?.tierName || 'Standard';
+  const name = gym?.name || 'Gym';
+  const rating = gym?.rating || gym?.avgRating || '—';
   const reviewCount = gym?.reviewCount || gym?.ratingsCount || '—';
-  const address = gym?.address || gym?.location?.address || fallbackAddress || 'Bhubaneswar';
-  const hours = gym?.openingHours || gym?.timings || '5am – 11pm';
-  const breakHours = gym?.breakHours || (gym?.breakStartTime && gym?.breakEndTime ? `${gym.breakStartTime} - ${gym.breakEndTime}` : null);
-  const description = gym?.description || 'Fully equipped gym with state-of-the-art cardio machines, free weights, functional training zone, and certified personal trainers. Built for every fitness level.';
-  const amenities: string[] = gym?.amenities || ['AC', 'Parking', 'Shower', 'Locker', 'Steam Room', 'Pool'];
+  const address = gym?.address || gym?.location?.address || '';
+  const hours = formatClockRange(gym?.openingTime, gym?.closingTime, gym?.openingHours || gym?.timings || '');
+  const breakHours = formatClockRange(gym?.breakStartTime, gym?.breakEndTime, gym?.breakHours || null);
+  const description = gym?.description || '';
+  const amenities: string[] = gym?.amenities || [];
   const categories: string[] = gym?.categories || gym?.tags || [];
-  const img = gym?.images?.[0] || gym?.coverImage || 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=800&q=80';
+  const img = firstImage(gym?.images, gym?.photos, gym?.coverImage, gym?.coverPhoto) || DEFAULT_GYM_IMAGE;
+  const heroSource = { uri: img };
   const subscriptionId = activeSub?._id || activeSub?.id;
   const activePlanType = subscriptionPlanType(activeSub);
   const activeSubLabel = activeSub ? accessLabelForSubscription(activeSub, activePlanType === 'multi_gym') : '';
   const activeUntil = formatDateLabel(activeSub?.endDate || activeSub?.validUntil);
-  const startingMonthlyPrice = minMonthlyPlanPrice(gymPlans) || positiveNumber(gym?.sameGymMonthlyPrice) || 599;
+  const startingMonthlyPrice = minMonthlyPlanPrice(gymPlans);
   const dayPassPrice = positiveNumber(gym?.dayPassPrice) || positiveNumber(gym?.ratePerDay) || null;
 
   const gymLat: number | null = gym?.latitude || gym?.location?.lat || null;
@@ -196,27 +216,13 @@ export default function GymDetail() {
     Share.share({ message: `Check out ${name} on BookMyFit!` }).catch(() => {});
   };
 
-  const FALLBACK_SLOTS = [
-    { id: 'fsl1', startTime: '06:00', endTime: '07:00', maxCapacity: 20, bookedCount: 8,  isFull: false, sessionType: { id: 'gym',    name: 'Gym Workout', color: '#3DFF54', durationMinutes: 60, instructor: 'Raj Kumar' } },
-    { id: 'fsl2', startTime: '06:00', endTime: '07:00', maxCapacity: 15, bookedCount: 10, isFull: false, sessionType: { id: 'cardio', name: 'Cardio',      color: '#FB923C', durationMinutes: 60, instructor: 'Priya Das' } },
-    { id: 'fsl3', startTime: '07:00', endTime: '08:00', maxCapacity: 20, bookedCount: 14, isFull: false, sessionType: { id: 'gym',    name: 'Gym Workout', color: '#3DFF54', durationMinutes: 60, instructor: 'Amit Singh' } },
-    { id: 'fsl4', startTime: '08:00', endTime: '09:00', maxCapacity: 12, bookedCount: 4,  isFull: false, sessionType: { id: 'yoga',   name: 'Yoga',        color: '#22D3EE', durationMinutes: 60, instructor: 'Sunita Rao' } },
-    { id: 'fsl5', startTime: '08:00', endTime: '09:00', maxCapacity: 20, bookedCount: 20, isFull: true,  sessionType: { id: 'cardio', name: 'Cardio',      color: '#FB923C', durationMinutes: 60, instructor: 'Priya Das' } },
-    { id: 'fsl6', startTime: '09:00', endTime: '10:00', maxCapacity: 12, bookedCount: 3,  isFull: false, sessionType: { id: 'yoga',   name: 'Yoga',        color: '#22D3EE', durationMinutes: 60, instructor: 'Sunita Rao' } },
-    { id: 'fsl7', startTime: '09:00', endTime: '10:00', maxCapacity: 20, bookedCount: 11, isFull: false, sessionType: { id: 'gym',    name: 'Gym Workout', color: '#3DFF54', durationMinutes: 60, instructor: 'Raj Kumar' } },
-    { id: 'fsl8', startTime: '17:00', endTime: '18:00', maxCapacity: 20, bookedCount: 15, isFull: false, sessionType: { id: 'cardio', name: 'Cardio',      color: '#FB923C', durationMinutes: 60, instructor: 'Amit Singh' } },
-    { id: 'fsl9', startTime: '18:00', endTime: '19:00', maxCapacity: 20, bookedCount: 18, isFull: false, sessionType: { id: 'gym',    name: 'Gym Workout', color: '#3DFF54', durationMinutes: 60, instructor: 'Raj Kumar' } },
-    { id: 'fsl10',startTime: '18:00', endTime: '19:00', maxCapacity: 10, bookedCount: 5,  isFull: false, sessionType: { id: 'hiit',   name: 'HIIT',        color: '#F59E0B', durationMinutes: 45, instructor: 'Vikram Nair' } },
-    { id: 'fsl11',startTime: '19:00', endTime: '20:00', maxCapacity: 12, bookedCount: 8,  isFull: false, sessionType: { id: 'yoga',   name: 'Yoga',        color: '#22D3EE', durationMinutes: 60, instructor: 'Sunita Rao' } },
-  ];
-
   const loadSlots = (gymId: string, date: string) => {
     api.get(`/sessions/slots/${gymId}?date=${date}`)
       .then((data: any) => {
         const slots = Array.isArray(data) ? data : [];
-        setSessionSlots(slots.length > 0 ? slots : FALLBACK_SLOTS);
+        setSessionSlots(slots);
       })
-      .catch(() => setSessionSlots(FALLBACK_SLOTS));
+      .catch(() => setSessionSlots([]));
   };
 
   const bookSlot = async (slotId: string) => {
@@ -259,11 +265,27 @@ export default function GymDetail() {
     }
   };
 
+  if (!loading && !gym) {
+    return (
+      <AuroraBackground variant="gym">
+        <SafeAreaView style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <Text style={[s.sectionTitle, { textAlign: 'center' }]}>Gym not found</Text>
+          <Text style={[s.body, { textAlign: 'center', color: colors.t2, marginTop: 8 }]}>
+            We could not load this gym from the server. Please try again.
+          </Text>
+          <TouchableOpacity style={[s.cta, { marginTop: 18 }]} onPress={() => router.back()}>
+            <Text style={s.ctaText}>Go Back</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      </AuroraBackground>
+    );
+  }
+
   return (
     <AuroraBackground variant="gym">
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Hero */}
-        <ImageBackground source={{ uri: img }} style={s.hero}>
+        <ImageBackground source={heroSource} style={s.hero}>
           <View style={[s.heroAurora, { backgroundColor: TIER_AURORA[tier] || TIER_AURORA.Elite }]} />
           <View style={s.heroDark} />
           <SafeAreaView style={s.heroInner}>
@@ -276,7 +298,7 @@ export default function GymDetail() {
           </SafeAreaView>
         </ImageBackground>
 
-        <View style={[s.content, { paddingBottom: 120 + bottomInset }]}>
+        <View style={[s.content, { paddingBottom: 96 + bottomInset }]}>
           {loading ? (
             <>
               <SkeletonRect h={20} style={{ width: 80, marginBottom: 10 }} />
@@ -530,10 +552,14 @@ export default function GymDetail() {
                     )}
                   </View>
 
-                  <Text style={s.sectionTitle}>Description</Text>
-                  <View style={s.glassCard}>
-                    <Text style={s.body}>{description}</Text>
-                  </View>
+                  {description ? (
+                    <>
+                      <Text style={s.sectionTitle}>Description</Text>
+                      <View style={s.glassCard}>
+                        <Text style={s.body}>{description}</Text>
+                      </View>
+                    </>
+                  ) : null}
 
                   {amenities.length > 0 && (
                     <>
@@ -671,11 +697,15 @@ export default function GymDetail() {
           ) : (
             <>
               <View>
-                <Text style={s.footLabel}>Starting from</Text>
-                <Text style={s.footPrice}>
-                  ₹{Math.round(startingMonthlyPrice).toLocaleString('en-IN')}
-                  <Text style={s.footPer}>/mo</Text>
-                </Text>
+                <Text style={s.footLabel}>{startingMonthlyPrice ? 'Starting from' : 'Membership'}</Text>
+                {startingMonthlyPrice ? (
+                  <Text style={s.footPrice}>
+                    ₹{Math.round(startingMonthlyPrice).toLocaleString('en-IN')}
+                    <Text style={s.footPer}>/mo</Text>
+                  </Text>
+                ) : (
+                  <Text style={s.footPrice}>View plans</Text>
+                )}
                 {dayPassPrice ? (
                   <Text style={[s.footPer, { color: '#ff6b35', fontSize: 10 }]}>
                     Day pass from ₹{Math.round(dayPassPrice).toLocaleString('en-IN')}

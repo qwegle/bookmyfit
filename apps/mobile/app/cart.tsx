@@ -9,6 +9,7 @@ import { colors, fonts, radius } from '../theme/brand';
 import { IconArrowLeft, IconTrash, IconCart } from '../components/Icons';
 import AuroraBackground from '../components/AuroraBackground';
 import { storeApi, getUser } from '../lib/api';
+import { DEFAULT_PRODUCT_IMAGE, firstImage } from '../lib/imageFallbacks';
 
 type CartItem = {
   productId: string;
@@ -122,11 +123,11 @@ export default function CartScreen() {
           </View>
         ) : (
           <>
-            <ScrollView contentContainerStyle={[s.list, { paddingBottom: 36 + bottomInset }]} showsVerticalScrollIndicator={false}>
+            <ScrollView contentContainerStyle={[s.list, { paddingBottom: 16 }]} showsVerticalScrollIndicator={false}>
               {items.map((item) => (
                 <View key={item.productId} style={s.card}>
                   <Image
-                    source={{ uri: item.image || 'https://images.unsplash.com/photo-1584735935682-2f2b69dff9d2?w=200&q=60' }}
+                    source={{ uri: firstImage(item.image) || DEFAULT_PRODUCT_IMAGE }}
                     style={s.cardImage}
                   />
                   <View style={s.cardInfo}>

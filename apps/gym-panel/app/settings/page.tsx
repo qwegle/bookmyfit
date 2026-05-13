@@ -1,7 +1,7 @@
 'use client';
 
 import Shell from '../../components/Shell';
-import { api, getUser } from '../../lib/api';
+import { api } from '../../lib/api';
 import { useEffect, useState } from 'react';
 import { Settings, Bell, Shield, Edit2, Check, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 
@@ -134,24 +134,7 @@ export default function SettingsPage() {
         setHoursSunday(data.hoursSunday ?? '8:00 AM - 6:00 PM');
         setDayPassPrice(data.dayPassPrice != null ? String(data.dayPassPrice) : '');
       } catch {
-        try {
-          const user = getUser();
-          setGymName(user?.gymName ?? user?.name ?? 'My Gym');
-          setCity(user?.city ?? 'Mumbai');
-          setContactEmail(user?.email ?? 'contact@gym.in');
-          setContactPhone(user?.phone ?? '+91 98765 43210');
-          setHoursWeekday(user?.hoursWeekday ?? '6:00 AM - 10:00 PM');
-          setHoursSaturday(user?.hoursSaturday ?? '7:00 AM - 8:00 PM');
-          setHoursSunday(user?.hoursSunday ?? '8:00 AM - 6:00 PM');
-        } catch {
-          setGymName('My Gym');
-          setCity('Mumbai');
-          setContactEmail('contact@gym.in');
-          setContactPhone('+91 98765 43210');
-          setHoursWeekday('6:00 AM - 10:00 PM');
-          setHoursSaturday('7:00 AM - 8:00 PM');
-          setHoursSunday('8:00 AM - 6:00 PM');
-        }
+        showToast('Could not load gym settings.');
       } finally {
         setLoading(false);
       }
@@ -189,8 +172,9 @@ export default function SettingsPage() {
         hoursSaturday,
         hoursSunday,
       });
-    } catch {
-      // best-effort
+    } catch (e: any) {
+      showToast(e?.message || 'Contact details were not saved.');
+      return;
     }
     setEditingContact(false);
     showToast('Contact details saved.');
@@ -221,8 +205,9 @@ export default function SettingsPage() {
         hoursSaturday,
         hoursSunday,
       });
-    } catch {
-      // best-effort
+    } catch (e: any) {
+      showToast(e?.message || 'Operating hours were not saved.');
+      return;
     }
     setEditingHours(false);
     showToast('Operating hours saved.');
@@ -244,14 +229,15 @@ export default function SettingsPage() {
       await api.put(endpoint, {
         dayPassPrice: dayPassPrice !== '' ? Number(dayPassPrice) : null,
       });
-    } catch {
-      // best-effort
+    } catch (e: any) {
+      showToast(e?.message || 'Pricing was not saved.');
+      return;
     }
     setEditingPricing(false);
     showToast('Pricing saved.');
   }
 
-  function handlePasswordSubmit(e: React.FormEvent) {
+  async function handlePasswordSubmit(e: React.FormEvent) {
     e.preventDefault();
     setPwError('');
     setPwSuccess('');
@@ -263,11 +249,16 @@ export default function SettingsPage() {
       setPwError('New password and confirm password do not match.');
       return;
     }
-    setPwSuccess('Password updated successfully.');
-    setCurrentPw('');
-    setNewPw('');
-    setConfirmPw('');
-    setTimeout(() => setPwSuccess(''), 3000);
+    try {
+      await api.post('/auth/change-password', { currentPassword: currentPw, newPassword: newPw });
+      setPwSuccess('Password updated successfully.');
+      setCurrentPw('');
+      setNewPw('');
+      setConfirmPw('');
+      setTimeout(() => setPwSuccess(''), 3000);
+    } catch (err: any) {
+      setPwError(err?.message || 'Password update failed.');
+    }
   }
 
   const labelStyle: React.CSSProperties = { color: 'var(--t2)', fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 };

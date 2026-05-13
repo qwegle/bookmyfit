@@ -6,7 +6,22 @@ import { useToast } from '../../components/Toast';
 import { X, CheckCircle, Plus } from 'lucide-react';
 
 interface Category { id: string; name: string; }
-interface Amenity { id: string; name: string; status?: string; requestedBy?: string; }
+interface Amenity {
+  id: string;
+  name: string;
+  status?: string;
+  isActive?: boolean;
+  requestedBy?: string;
+  requestedByGymId?: string | null;
+  requestedByUserId?: string | null;
+}
+
+function requestSourceLabel(amenity: Amenity) {
+  if (amenity.requestedBy) return `from ${amenity.requestedBy}`;
+  if (amenity.requestedByGymId) return `from gym ${amenity.requestedByGymId.slice(0, 8)}`;
+  if (amenity.requestedByUserId) return `from user ${amenity.requestedByUserId.slice(0, 8)}`;
+  return 'from gym request';
+}
 
 function Skeleton() {
   return (
@@ -32,12 +47,12 @@ export default function CategoriesPage() {
     try {
       const [cats, amens] = await Promise.all([
         api.get('/master/categories'),
-        api.get('/master/amenities?includeAll=true'),
+        api.get('/master/amenities/all'),
       ]);
       const catArr: Category[] = Array.isArray(cats) ? cats : cats?.data ?? [];
       const amenArr: Amenity[] = Array.isArray(amens) ? amens : amens?.data ?? [];
       setCategories(catArr);
-      setAmenities(amenArr.filter((a) => a.status !== 'pending'));
+      setAmenities(amenArr.filter((a) => (a.status || 'approved') === 'approved' && a.isActive !== false));
       setPending(amenArr.filter((a) => a.status === 'pending'));
     } catch (e: any) {
       toast(e.message || 'Failed to load', 'error');
@@ -95,6 +110,16 @@ export default function CategoriesPage() {
       toast('Category removed', 'info');
     } catch (e: any) {
       toast(e.message || 'Failed to remove category', 'error');
+    }
+  };
+
+  const rejectRequest = async (id: string) => {
+    try {
+      await api.del(`/master/amenities/${id}`);
+      toast('Amenity request rejected', 'info');
+      load();
+    } catch (e: any) {
+      toast(e.message || 'Failed to reject', 'error');
     }
   };
 
@@ -188,16 +213,14 @@ export default function CategoriesPage() {
               <div key={r.id} className="flex items-center justify-between p-3 rounded-xl" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
                 <div>
                   <span className="text-white font-semibold text-[13px]">{r.name}</span>
-                  {r.requestedBy && (
-                    <span className="ml-2 text-xs" style={{ color: 'var(--t2)' }}>from {r.requestedBy}</span>
-                  )}
+                  <span className="ml-2 text-xs" style={{ color: 'var(--t2)' }}>{requestSourceLabel(r)}</span>
                   <span className="ml-2 accent-pill">Amenity</span>
                 </div>
                 <div className="flex gap-2">
                   <button className="btn btn-primary text-xs flex items-center gap-1" onClick={() => approveRequest(r.id)}>
                     <CheckCircle size={12} /> Approve
                   </button>
-                  <button className="btn btn-ghost text-xs flex items-center gap-1" onClick={() => removeAmenity(r.id)}>
+                  <button className="btn btn-ghost text-xs flex items-center gap-1" onClick={() => rejectRequest(r.id)}>
                     <X size={12} /> Reject
                   </button>
                 </div>

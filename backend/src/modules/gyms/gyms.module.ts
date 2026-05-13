@@ -65,8 +65,14 @@ class GymsService {
     if (!row) return null;
     const openingTime = row.openingTime || '06:00';
     const closingTime = row.closingTime || '22:00';
+    const photos = Array.isArray(row.photos) ? row.photos.filter(Boolean) : [];
+    const coverPhoto = row.coverPhoto || photos[0] || null;
     return {
       ...row,
+      coverPhoto,
+      coverImage: coverPhoto,
+      photos,
+      images: photos.length > 0 ? photos : (coverPhoto ? [coverPhoto] : []),
       phone: row.contactPhone ?? null,
       email: row.contactEmail ?? null,
       openingHours: `${openingTime} - ${closingTime}`,
@@ -103,6 +109,20 @@ class GymsService {
     return Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
   }
 
+  private kycPhotoUrls(docs: any[] = []) {
+    const urls = docs
+      .filter((doc) => doc?.type === 'gym_photos')
+      .flatMap((doc) => [
+        doc?.fields?.exteriorPhotoUrl,
+        doc?.fields?.interiorPhotoUrl,
+        doc?.fields?.equipmentPhotoUrl,
+        doc?.url,
+      ])
+      .filter((url) => typeof url === 'string' && url.trim().length > 0)
+      .map((url) => url.trim());
+    return [...new Set(urls)];
+  }
+
   private sanitizeGymPatch(data: any, isAdmin = false): Partial<GymEntity> {
     const raw = data || {};
     const patch: any = {
@@ -115,8 +135,8 @@ class GymsService {
       contactPhone: raw.contactPhone ?? raw.phone,
       contactEmail: raw.contactEmail ?? raw.email,
       website: raw.website,
-      coverPhoto: raw.coverPhoto,
-      photos: Array.isArray(raw.photos) ? raw.photos : undefined,
+      coverPhoto: raw.coverPhoto ?? raw.coverImage,
+      photos: Array.isArray(raw.photos) ? raw.photos : (Array.isArray(raw.images) ? raw.images : undefined),
       amenities: Array.isArray(raw.amenities) ? raw.amenities : undefined,
       categories: Array.isArray(raw.categories) ? raw.categories : undefined,
       openingTime: raw.openingTime,
@@ -413,7 +433,17 @@ class GymsService {
       status: 'approved',
       reviewedAt: new Date().toISOString(),
     }));
-    await this.repo.update(id, { status: 'active' as GymStatus, kycStatus: 'approved', kycDocuments: docs, kycReviewNote: null });
+    const kycPhotos = this.kycPhotoUrls(docs);
+    const existingPhotos = Array.isArray(gym?.photos) ? gym.photos.filter(Boolean) : [];
+    const photos = [...new Set([...existingPhotos, ...kycPhotos])];
+    await this.repo.update(id, {
+      status: 'active' as GymStatus,
+      kycStatus: 'approved',
+      kycDocuments: docs,
+      kycReviewNote: null,
+      coverPhoto: gym?.coverPhoto || photos[0] || null,
+      photos,
+    });
     return this.get(id);
   }
 

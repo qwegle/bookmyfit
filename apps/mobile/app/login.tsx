@@ -44,7 +44,7 @@ export default function Login() {
   return (
     <AuroraBackground>
       <SafeAreaView style={s.container}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.keyboard}>
           {/* Brand mark */}
           <View style={s.brandRow}>
             <View style={s.brandDot} />
@@ -105,6 +105,7 @@ export default function Login() {
 
 const s = StyleSheet.create({
   container: { flex: 1, paddingHorizontal: 24 },
+  keyboard: { flex: 1, minHeight: 0 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16 },
   brandDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.accent },
   brandName: { fontFamily: fonts.sansBold, fontSize: 13, color: colors.t2, letterSpacing: 1 },
@@ -113,7 +114,7 @@ const s = StyleSheet.create({
   title: { fontFamily: fonts.serifBlack, fontSize: 40, color: '#fff', letterSpacing: -1.5, lineHeight: 44 },
   titleAccent: { fontFamily: fonts.serifItalic, color: colors.accent, fontSize: 40 },
   sub: { fontFamily: fonts.sans, fontSize: 13, color: colors.t2, marginTop: 16, lineHeight: 20 },
-  form: { marginTop: 44, flex: 1 },
+  form: { marginTop: 44 },
   label: { fontFamily: fonts.sansBold, fontSize: 10, color: colors.t2, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10 },
   inputRow: {
     flexDirection: 'row', alignItems: 'center',
@@ -124,7 +125,7 @@ const s = StyleSheet.create({
   prefix: { fontFamily: fonts.sansBold, fontSize: 15, color: colors.t },
   divider: { width: 1, height: '60%', backgroundColor: colors.border },
   input: { flex: 1, fontFamily: fonts.sans, fontSize: 16, color: '#fff', paddingHorizontal: 14 },
-  bottom: { paddingBottom: 32, gap: 16 },
+  bottom: { marginTop: 'auto', paddingBottom: 32, gap: 16 },
   cta: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
     height: 58, borderRadius: radius.pill, backgroundColor: colors.accent,

@@ -1,7 +1,7 @@
 'use client';
 
 import Shell from '../../components/Shell';
-import { api, getUser } from '../../lib/api';
+import { api } from '../../lib/api';
 import { useEffect, useState, useRef } from 'react';
 import { Building2, MapPin, Phone, Mail, Globe, Clock, Star, Upload, Check, AlertTriangle } from 'lucide-react';
 
@@ -18,6 +18,24 @@ interface FormState {
   closingTime: string;
   breakStartTime: string;
   breakEndTime: string;
+}
+
+function formatClockTime(value?: string | null) {
+  if (!value) return '--';
+  const match = String(value).trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return value;
+
+  const hour = Number(match[1]);
+  const minute = match[2];
+  if (!Number.isFinite(hour) || hour < 0 || hour > 23) return value;
+
+  const suffix = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${minute} ${suffix}`;
+}
+
+function formatClockRange(start?: string | null, end?: string | null) {
+  return `${formatClockTime(start)} - ${formatClockTime(end)}`;
 }
 
 export default function ProfilePage() {
@@ -43,6 +61,8 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [partnerTier, setPartnerTier] = useState('');
+  const [rating, setRating] = useState<number | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -50,6 +70,8 @@ export default function ProfilePage() {
       try {
         const data = await api.get('/gyms/my-gym');
         setGymId(data._id || data.id || '');
+        setPartnerTier(data.partnerTier || data.tier || '');
+        setRating(data.rating || data.avgRating || null);
         setForm({
           displayName: data.name || data.displayName || '',
           description: data.description || '',
@@ -64,23 +86,8 @@ export default function ProfilePage() {
           breakStartTime: data.breakStartTime || '',
           breakEndTime: data.breakEndTime || '',
         });
-      } catch {
-        const user = getUser();
-        setForm(prev => ({
-          ...prev,
-          displayName: user?.name || "Gold's Gym Bandra",
-          city: user?.city || 'Mumbai',
-          phone: user?.phone || '+91 98765 43210',
-          email: user?.email || 'bandra@goldsgym.in',
-          address: 'Link Road, Bandra West, Mumbai 400050',
-          description: 'Premium fitness center with world-class equipment and expert trainers.',
-          website: 'www.goldsgym.in',
-          openingTime: '05:00',
-          closingTime: '23:00',
-          breakStartTime: '',
-          breakEndTime: '',
-          pinCode: '400050',
-        }));
+      } catch (e: any) {
+        setError(e?.message || 'Could not load gym profile.');
       } finally {
         setLoading(false);
       }
@@ -165,12 +172,14 @@ export default function ProfilePage() {
                 </p>
               </div>
 
-              <span className="accent-pill">Premium Partner</span>
+              {partnerTier && <span className="accent-pill">{partnerTier}</span>}
 
-              <div className="flex items-center gap-1">
-                <Star size={14} style={{ color: 'var(--accent)' }} />
-                <span className="text-sm font-semibold" style={{ color: 'var(--t)' }}>4.7</span>
-              </div>
+              {rating !== null && (
+                <div className="flex items-center gap-1">
+                  <Star size={14} style={{ color: 'var(--accent)' }} />
+                  <span className="text-sm font-semibold" style={{ color: 'var(--t)' }}>{Number(rating).toFixed(1)}</span>
+                </div>
+              )}
 
               <div className="w-full space-y-2 mt-2">
                 <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--t2)' }}>
@@ -191,12 +200,12 @@ export default function ProfilePage() {
                 </div>
                 <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--t2)' }}>
                   <Clock size={14} />
-                  <span>Opens: {form.openingTime} - Closes: {form.closingTime}</span>
+                  <span>Opens: {formatClockTime(form.openingTime)} - Closes: {formatClockTime(form.closingTime)}</span>
                 </div>
                 {form.breakStartTime && form.breakEndTime && (
                   <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--t2)' }}>
                     <Clock size={14} />
-                    <span>Break: {form.breakStartTime} - {form.breakEndTime}</span>
+                    <span>Break: {formatClockRange(form.breakStartTime, form.breakEndTime)}</span>
                   </div>
                 )}
               </div>
@@ -216,6 +225,11 @@ export default function ProfilePage() {
             </div>
           ) : (
             <div className="space-y-4">
+              {error && (
+                <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--error)' }}>
+                  <AlertTriangle size={14} /> {error}
+                </div>
+              )}
               {/* Display Name */}
               <div>
                 <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--t2)' }}>

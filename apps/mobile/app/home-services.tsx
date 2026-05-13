@@ -9,15 +9,9 @@ import { router } from 'expo-router';
 import { colors, fonts, radius, spacing } from '../theme/brand';
 import { IconArrowLeft, IconStar, IconPin } from '../components/Icons';
 import { api } from '../lib/api';
+import { wellnessPartnerImage } from '../lib/imageFallbacks';
 
 // ─── Fallback data ────────────────────────────────────────────────────────────
-const FALLBACK_HOME_PROVIDERS = [
-  { id: 'h1', name: 'ZenTouch Home Spa', serviceType: 'home', city: 'Bhubaneswar', area: 'Saheed Nagar', rating: 4.7, reviewCount: 86, photos: ['https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=600&q=80'], minPrice: 799, services: ['Swedish Massage', 'Facial', 'Manicure'] },
-  { id: 'h2', name: 'BlissAt Home Wellness', serviceType: 'home', city: 'Bhubaneswar', area: 'Nayapalli', rating: 4.5, reviewCount: 64, photos: ['https://images.unsplash.com/photo-1610337673044-720471f83677?w=600&q=80'], minPrice: 699, services: ['Deep Tissue Massage', 'Bridal Makeup', 'Pedicure'] },
-  { id: 'h3', name: 'Urban Clap Pro', serviceType: 'home', city: 'Bhubaneswar', area: 'Patia', rating: 4.6, reviewCount: 112, photos: ['https://images.unsplash.com/photo-1502086223501-7ea6ecd79368?w=600&q=80'], minPrice: 599, services: ['Haircut & Blowdry', 'Facial', 'Waxing'] },
-  { id: 'h4', name: 'GlowUp At Home', serviceType: 'home', city: 'Bhubaneswar', area: 'Chandrasekharpur', rating: 4.4, reviewCount: 43, photos: ['https://images.unsplash.com/photo-1515377905703-c4788e51af15?w=600&q=80'], minPrice: 849, services: ['Party Makeup', 'Pedicure', 'Massage'] },
-];
-
 const CATEGORIES = ['All', 'Massage', 'Facial', 'Hair', 'Cleaning', 'Physio'];
 
 type Provider = {
@@ -30,14 +24,18 @@ export default function HomeServicesScreen() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] = useState('All');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     api.get('/wellness/partners?serviceType=home&limit=50')
       .then((res: any) => {
         const list: Provider[] = res?.data || (Array.isArray(res) ? res : []);
-        setProviders(list.length > 0 ? list : FALLBACK_HOME_PROVIDERS);
+        setProviders(list);
       })
-      .catch(() => setProviders(FALLBACK_HOME_PROVIDERS))
+      .catch((e: any) => {
+        setProviders([]);
+        setError(e?.message || 'Could not load home service providers.');
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -93,11 +91,11 @@ export default function HomeServicesScreen() {
         >
           {filtered.length === 0 ? (
             <View style={s.emptyBox}>
-              <Text style={s.emptyText}>No home service providers found</Text>
+              <Text style={s.emptyText}>{error || 'No home service providers found'}</Text>
             </View>
           ) : (
             filtered.map(provider => {
-              const heroImg = provider.photos?.[0] || 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=600&q=80';
+              const heroImg = wellnessPartnerImage(provider);
               const services = provider.services || [];
               return (
                 <View key={provider.id} style={s.providerCard}>
@@ -110,13 +108,13 @@ export default function HomeServicesScreen() {
                       {/* Rating badge */}
                       <View style={s.ratingBadge}>
                         <IconStar size={12} color={colors.star} />
-                        <Text style={s.ratingText}>{provider.rating.toFixed(1)}</Text>
-                        <Text style={s.reviewText}>({provider.reviewCount})</Text>
+                        <Text style={s.ratingText}>{provider.rating ? provider.rating.toFixed(1) : '--'}</Text>
+                        <Text style={s.reviewText}>({provider.reviewCount || 0})</Text>
                       </View>
                       <Text style={s.providerName}>{provider.name}</Text>
                       <View style={s.locationRow}>
                         <IconPin size={12} color={colors.accent} />
-                        <Text style={s.locationText}>{provider.area}, {provider.city}</Text>
+                        <Text style={s.locationText}>{[provider.area, provider.city].filter(Boolean).join(', ') || 'Location not added'}</Text>
                       </View>
                     </LinearGradient>
                   </ImageBackground>
@@ -138,13 +136,13 @@ export default function HomeServicesScreen() {
                     <View style={s.cardFooter}>
                       <View>
                         <Text style={s.fromLabel}>Starting from</Text>
-                        <Text style={s.fromPrice}>₹{(provider.minPrice || 499).toLocaleString()}</Text>
+                        <Text style={s.fromPrice}>{provider.minPrice ? `₹${provider.minPrice.toLocaleString()}` : 'Pricing not added'}</Text>
                       </View>
                       <TouchableOpacity
                         style={s.bookBtn}
                         onPress={() => router.push({ pathname: '/wellness/[id]', params: { id: provider.id } } as any)}
                       >
-                        <Text style={s.bookBtnText}>Book Now</Text>
+                        <Text style={s.bookBtnText}>View Services</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -219,12 +217,16 @@ const s = StyleSheet.create({
   },
   svcChipText: { fontFamily: fonts.sans, fontSize: 11, color: colors.t },
 
-  cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   fromLabel: { fontFamily: fonts.sans, fontSize: 11, color: colors.t2, marginBottom: 2 },
   fromPrice: { fontFamily: fonts.sansBold, fontSize: 18, color: colors.accent },
   bookBtn: {
-    backgroundColor: colors.accent, borderRadius: radius.xl,
-    paddingHorizontal: 24, paddingVertical: 11,
+    backgroundColor: colors.accentSoft,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
   },
-  bookBtnText: { fontFamily: fonts.sansBold, fontSize: 14, color: '#060606' },
+  bookBtnText: { fontFamily: fonts.sansBold, fontSize: 12, color: colors.accent },
 });

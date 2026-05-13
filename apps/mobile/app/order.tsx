@@ -143,7 +143,7 @@ export default function Order() {
         <View style={{ width: 38 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[s.scroll, { paddingBottom: 130 + bottomInset }]}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[s.scroll, { paddingBottom: 24 }]}>
         {/* Plan card */}
         <ImageBackground
           source={{ uri: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=600&q=70' }}
@@ -235,7 +235,7 @@ export default function Order() {
           <Text style={s.securedText}>Secured by Cashfree · 256-bit SSL encryption</Text>
         </View>
 
-        <View style={{ height: 100 }} />
+        <View style={{ height: 8 }} />
       </ScrollView>
 
       {/* Footer */}

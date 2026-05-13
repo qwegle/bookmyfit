@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import Shell from '../../components/Shell';
 import { DollarSign, TrendingUp, CheckCircle, Clock, Download, AlertTriangle } from 'lucide-react';
 import { api } from '../../lib/api';
+import { useToast } from '../../components/Toast';
 
 type Settlement = {
   id: string; period: string; grossRevenue: number;
@@ -32,6 +33,7 @@ function SkeletonRow() {
 }
 
 export default function SettlementPage() {
+  const { toast } = useToast();
   const [current, setCurrent] = useState<CurrentMonth | null>(null);
   const [past, setPast] = useState<Settlement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,8 +60,13 @@ export default function SettlementPage() {
 
   const raiseDispute = async (id: string) => {
     if (!disputeText.trim()) return;
-    try { await api.post(`/settlements/${id}/dispute`, { reason: disputeText }); } catch { /* optimistic */ }
-    setDisputeSent(id); setDisputeId(null); setDisputeText('');
+    try {
+      await api.post(`/settlements/${id}/dispute`, { reason: disputeText });
+      setDisputeSent(id); setDisputeId(null); setDisputeText('');
+      toast('Dispute submitted');
+    } catch (e: any) {
+      toast(e.message || 'Failed to submit dispute', 'error');
+    }
   };
 
   const c = current ?? EMPTY_CURRENT;

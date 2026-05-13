@@ -8,20 +8,6 @@ import { Plus, Edit3, Trash2, Check, X, MapPin, Star, Clock, Tag, Building2, Ima
 const SERVICE_CATEGORIES = ['Massage', 'Cupping', 'Physio', 'Spa', 'Nutrition', 'Recovery', 'Other'];
 const SERVICE_TYPES = ['Spa', 'Home', 'Physio', 'Massage', 'Yoga', 'Nutrition'];
 
-const STATIC_PARTNERS = [
-  { id: 'p1', name: 'Serenity Spa & Wellness', serviceType: 'Spa', city: 'Mumbai', area: 'Bandra', address: 'Bandra West, Mumbai', rating: 4.6, reviewCount: 128, status: 'active', discountPercent: 20, distanceLabel: '1.2 km', photos: [], commissionRate: 25 },
-  { id: 'p2', name: 'The Royal Spa', serviceType: 'Massage', city: 'Mumbai', area: 'Andheri', address: 'Andheri West, Mumbai', rating: 4.4, reviewCount: 96, status: 'active', discountPercent: 15, distanceLabel: '2.3 km', photos: [], commissionRate: 25 },
-  { id: 'p3', name: 'Bliss Physio Clinic', serviceType: 'Physio', city: 'Mumbai', area: 'Juhu', address: 'Juhu, Mumbai', rating: 4.5, reviewCount: 84, status: 'active', discountPercent: 0, distanceLabel: '3.1 km', photos: [], commissionRate: 30 },
-];
-
-const STATIC_SERVICES = [
-  { id: 's1', name: 'Full Body Massage', category: 'Massage', price: 1299, originalPrice: 1599, durationMinutes: 60, isActive: true, partnerId: 'p1', imageUrl: '' },
-  { id: 's2', name: 'Deep Tissue Massage', category: 'Massage', price: 1599, originalPrice: 1999, durationMinutes: 60, isActive: true, partnerId: 'p1', imageUrl: '' },
-  { id: 's3', name: 'Cupping Therapy', category: 'Cupping', price: 799, originalPrice: 999, durationMinutes: 45, isActive: true, partnerId: 'p2', imageUrl: '' },
-  { id: 's4', name: 'Physiotherapy Session', category: 'Physio', price: 999, originalPrice: 1299, durationMinutes: 60, isActive: true, partnerId: 'p3', imageUrl: '' },
-  { id: 's5', name: 'Steam & Sauna', category: 'Spa', price: 499, originalPrice: 699, durationMinutes: 45, isActive: true, partnerId: 'p1', imageUrl: '' },
-];
-
 const card: React.CSSProperties = {
   background: 'rgba(255,255,255,0.04)',
   border: '1px solid rgba(255,255,255,0.08)',
@@ -63,13 +49,13 @@ type Service = {
   durationMinutes: number; isActive: boolean; partnerId: string; imageUrl: string | null;
 };
 
-const defaultPartnerForm = { name: '', serviceType: 'Spa', city: '', area: '', address: '', status: 'active', discountPercent: '0', distanceLabel: '', commissionRate: '25', photos: '' };
+const defaultPartnerForm = { name: '', serviceType: 'Spa', city: '', area: '', address: '', status: 'active', discountPercent: '0', distanceLabel: '', commissionRate: '', photos: '' };
 const defaultServiceForm = { name: '', category: 'Massage', price: '', originalPrice: '', durationMinutes: '60', partnerId: '', imageUrl: '', isActive: true };
 
 export default function WellnessPage() {
   const [tab, setTab] = useState<'centres' | 'services'>('centres');
-  const [partners, setPartners] = useState<Partner[]>(STATIC_PARTNERS);
-  const [services, setServices] = useState<Service[]>(STATIC_SERVICES);
+  const [partners, setPartners] = useState<Partner[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
   const [msgType, setMsgType] = useState<'success' | 'error'>('success');
@@ -92,9 +78,9 @@ export default function WellnessPage() {
     ]).then(([partnersRes, servicesRes]) => {
       const pts = (partnersRes as any)?.data || partnersRes;
       const svcs = servicesRes;
-      if (Array.isArray(pts) && pts.length > 0) setPartners(pts as Partner[]);
-      if (Array.isArray(svcs) && svcs.length > 0) setServices(svcs as Service[]);
-    }).catch(() => {}).finally(() => setLoading(false));
+      setPartners(Array.isArray(pts) ? pts as Partner[] : []);
+      setServices(Array.isArray(svcs) ? svcs as Service[] : []);
+    }).catch(() => flash('Could not load wellness data.', 'error')).finally(() => setLoading(false));
   }, []);
 
   const flash = (m: string, type: 'success' | 'error' = 'success') => {
@@ -114,7 +100,7 @@ export default function WellnessPage() {
       address: p.address || '', status: p.status,
       discountPercent: String(p.discountPercent || 0),
       distanceLabel: p.distanceLabel || '',
-      commissionRate: String(p.commissionRate || 25),
+      commissionRate: String(p.commissionRate ?? ''),
       photos: (p.photos || []).join(', '),
     });
     setShowPartnerForm(true);
@@ -130,7 +116,7 @@ export default function WellnessPage() {
       status: partnerForm.status,
       discountPercent: Number(partnerForm.discountPercent) || 0,
       distanceLabel: partnerForm.distanceLabel,
-      commissionRate: Number(partnerForm.commissionRate) || 25,
+      ...(partnerForm.commissionRate.trim() ? { commissionRate: Number(partnerForm.commissionRate) } : {}),
       photos: partnerForm.photos ? partnerForm.photos.split(',').map(s => s.trim()).filter(Boolean) : [],
       rating: editingPartner?.rating || 0,
       reviewCount: editingPartner?.reviewCount || 0,
@@ -143,16 +129,13 @@ export default function WellnessPage() {
         flash('Spa centre updated!');
       } else {
         const created: any = await api.post('/wellness/partners', body);
-        setPartners(ps => [...ps, created?.id ? created : { ...body, id: `local_${Date.now()}` } as Partner]);
+        if (!created?.id) throw new Error('API did not return the created partner.');
+        setPartners(ps => [...ps, created]);
         flash('Spa centre added!');
       }
-    } catch {
-      if (editingPartner) {
-        setPartners(ps => ps.map(p => p.id === editingPartner.id ? { ...p, ...body } : p));
-      } else {
-        setPartners(ps => [...ps, { ...body, id: `local_${Date.now()}` } as Partner]);
-      }
-      flash('Saved locally');
+    } catch (e: any) {
+      flash(e?.message || 'Save failed. Please retry after checking your login session.', 'error');
+      return;
     }
     setShowPartnerForm(false); setEditingPartner(null);
   };
@@ -200,16 +183,13 @@ export default function WellnessPage() {
         setServices(ss => ss.map(s => s.id === editingSvc.id ? { ...s, ...body } : s));
       } else {
         const created: any = await api.post('/wellness/services', body);
-        setServices(ss => [...ss, created?.id ? created : { ...body, id: `local_${Date.now()}` } as Service]);
+        if (!created?.id) throw new Error('API did not return the created service.');
+        setServices(ss => [...ss, created]);
       }
       flash('Service saved!');
-    } catch {
-      if (editingSvc) {
-        setServices(ss => ss.map(s => s.id === editingSvc.id ? { ...s, ...body } : s));
-      } else {
-        setServices(ss => [...ss, { ...body, id: `local_${Date.now()}` } as Service]);
-      }
-      flash('Saved locally');
+    } catch (e: any) {
+      flash(e?.message || 'Service save failed. Please retry after checking your login session.', 'error');
+      return;
     }
     setShowSvcForm(false); setEditingSvc(null);
   };
@@ -374,7 +354,7 @@ export default function WellnessPage() {
                       <Star size={13} /> {p.rating || '—'} ({p.reviewCount || 0} reviews)
                     </span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'rgba(255,255,255,0.5)', fontSize: 13, fontFamily: 'DM Sans, sans-serif' }}>
-                      <Percent size={13} /> {p.commissionRate || 25}% commission
+                      <Percent size={13} /> {p.commissionRate ?? 'Not set'}{p.commissionRate != null ? '% commission' : ''}
                     </span>
                     {p.distanceLabel && (
                       <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, fontFamily: 'DM Sans, sans-serif' }}>📍 {p.distanceLabel}</span>

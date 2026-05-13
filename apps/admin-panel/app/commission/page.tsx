@@ -39,22 +39,26 @@ export default function CommissionPage() {
       toast('Commission rate saved');
       await load();
     } catch {
-      setRates((prev) => prev.map((r) => r.id === id ? { ...r, ...editValues } : r));
-      toast('Rate updated (offline mode)', 'info');
+      toast('Failed to save commission rate', 'error');
     }
     setEditingId(null);
   };
 
-  const totalSeats = rates.reduce((a, r) => a + r.commission, 0);
+  const avgCommission = rates.length
+    ? `${(rates.reduce((a, r) => a + Number(r.commission || 0), 0) / rates.length).toFixed(1)}%`
+    : '--';
+  const maxCoverage = rates.some((r) => r.maxGyms >= 999)
+    ? 'Unlimited'
+    : rates.length ? String(Math.max(...rates.map((r) => r.maxGyms || 0))) : '--';
 
   return (
     <Shell title="Commission Settings">
       {/* Stats Row */}
       <div className="grid grid-cols-3 gap-4 mb-8">
         {[
-          { label: 'Estimated Monthly Commission', value: '₹4.8L' },
-          { label: 'Active Plans Tracked', value: '18,420' },
-          { label: 'Avg Commission Rate', value: '12.4%' },
+          { label: 'Configured Plan Types', value: loading ? '...' : String(rates.length) },
+          { label: 'Avg Commission Rate', value: loading ? '...' : avgCommission },
+          { label: 'Max Gym Coverage', value: loading ? '...' : maxCoverage },
         ].map((s) => (
           <div key={s.label} className="card stat-glow p-5">
             <div className="text-2xl font-bold mb-1">{s.value}</div>

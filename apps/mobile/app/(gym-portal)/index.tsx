@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { api, logout, gymStaffApi } from '../../lib/api';
+import { logout, gymStaffApi } from '../../lib/api';
 import { colors, fonts, radius, spacing } from '../../theme/brand';
 import { IconDumbbell, IconQR, IconUser, IconClose, IconCheck, IconClock, IconRefresh } from '../../components/Icons';
 
@@ -32,15 +32,6 @@ type Gym = {
   name: string;
 };
 
-const MOCK_STATS: Stats = { todayCheckins: 14, activeMembers: 87 };
-const MOCK_CHECKINS: CheckIn[] = [
-  { id: '1', memberName: 'Rahul Sharma', phone: '98765xxxxx', time: '09:42 AM', status: 'success' },
-  { id: '2', memberName: 'Priya Mehta', phone: '87654xxxxx', time: '09:15 AM', status: 'success' },
-  { id: '3', memberName: 'Unknown', phone: '76543xxxxx', time: '08:50 AM', status: 'failed' },
-  { id: '4', memberName: 'Amit Verma', phone: '65432xxxxx', time: '08:30 AM', status: 'success' },
-  { id: '5', memberName: 'Sneha Patel', phone: '54321xxxxx', time: '07:55 AM', status: 'success' },
-];
-
 export default function GymDashboard() {
   const [gym, setGym] = useState<Gym | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -53,28 +44,28 @@ export default function GymDashboard() {
     try {
       setError(null);
       const [gymData, statsData] = await Promise.all([
-        gymStaffApi.myGym().catch(() => null),
-        gymStaffApi.todayStats().catch(() => null),
+        gymStaffApi.myGym(),
+        gymStaffApi.todayStats(),
       ]);
 
-      setGym(gymData || { id: 'demo', name: 'Demo Gym' });
+      setGym(gymData || null);
 
       if (statsData) {
         const checkinList = statsData.checkins ?? statsData.recent ?? [];
         setStats({
-          todayCheckins: statsData.count ?? statsData.todayCheckins ?? MOCK_STATS.todayCheckins,
-          // activeMembers not in API response — derive from current check-in count
-          activeMembers: checkinList.length > 0 ? checkinList.length : statsData.count ?? MOCK_STATS.activeMembers,
+          todayCheckins: statsData.count ?? statsData.todayCheckins ?? 0,
+          activeMembers: statsData.activeMembers ?? statsData.activeSubscriptions ?? 0,
         });
-        setCheckins(checkinList.length > 0 ? checkinList.slice(0, 5) : MOCK_CHECKINS);
+        setCheckins(checkinList.slice(0, 5));
       } else {
-        setStats(MOCK_STATS);
-        setCheckins(MOCK_CHECKINS);
+        setStats({ todayCheckins: 0, activeMembers: 0 });
+        setCheckins([]);
       }
     } catch {
       setError('Could not load dashboard data.');
-      setStats(MOCK_STATS);
-      setCheckins(MOCK_CHECKINS);
+      setGym(null);
+      setStats({ todayCheckins: 0, activeMembers: 0 });
+      setCheckins([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -124,7 +115,7 @@ export default function GymDashboard() {
         {/* Error state */}
         {error && (
           <View style={s.errorBanner}>
-            <Text style={s.errorText}>{error} Showing cached data.</Text>
+            <Text style={s.errorText}>{error}</Text>
             <TouchableOpacity onPress={fetchData} style={s.retryBtn}>
               <IconRefresh size={14} color={colors.accent} />
               <Text style={s.retryText}>Retry</Text>
@@ -201,7 +192,7 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   loader: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
   scroll: { flex: 1 },
-  content: { paddingHorizontal: spacing.xl, paddingBottom: 132 },
+  content: { paddingHorizontal: spacing.xl, paddingBottom: 36 },
 
   aurora1: {
     position: 'absolute', top: -60, right: -60,

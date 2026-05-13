@@ -11,17 +11,10 @@ import { IconArrowLeft, IconStar, IconShare, IconCart, IconCheck } from '../../c
 import AuroraBackground from '../../components/AuroraBackground';
 import { api } from '../../lib/api';
 import { addToCart } from '../cart';
+import { productImage } from '../../lib/imageFallbacks';
 
 const { width } = Dimensions.get('window');
 const HERO_HEIGHT = 300;
-
-const DUMMY_IMAGES: Record<string, string> = {
-  Supplements: 'https://images.unsplash.com/photo-1593095948071-474c5cc2989d?w=800&q=80',
-  Accessories: 'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=800&q=80',
-  Apparel: 'https://images.unsplash.com/photo-1540497077202-7c8a3999166f?w=800&q=80',
-  Equipment: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=800&q=80',
-  default: 'https://images.unsplash.com/photo-1584735935682-2f2b69dff9d2?w=800&q=80',
-};
 
 function StarRow({ rating, count }: { rating: number; count: number }) {
   return (
@@ -84,7 +77,7 @@ function extractBullets(product: any): string[] {
     const sentences = desc.split(/[.!]/g).map((s: string) => s.trim()).filter((s: string) => s.length > 10);
     if (sentences.length >= 2) return sentences.slice(0, 3);
   }
-  return ['Premium quality ingredients', 'Lab tested and certified', 'Fast delivery across India'];
+  return [];
 }
 
 export default function ProductDetail() {
@@ -138,7 +131,7 @@ export default function ProductDetail() {
         name: product?.name || product?.productName || 'Product',
         price: product?.price ?? product?.mrp ?? 0,
         quantity,
-        image: product?.imageUrl || product?.image,
+        image: productImage(product),
         category: product?.category,
       });
       setAddedState('added');
@@ -166,11 +159,27 @@ export default function ProductDetail() {
     );
   }
 
+  if (!product) {
+    return (
+      <AuroraBackground variant="store">
+        <SafeAreaView style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <Text style={{ fontFamily: fonts.serif, fontSize: 22, color: '#fff', textAlign: 'center' }}>Product not found</Text>
+          <Text style={{ fontFamily: fonts.sans, fontSize: 14, color: colors.t2, textAlign: 'center', marginTop: 8 }}>
+            This product is not available from the server right now.
+          </Text>
+          <TouchableOpacity style={[s.buyNowBtn, { marginTop: 18, paddingHorizontal: 24, flex: 0 }]} onPress={() => router.back()}>
+            <Text style={s.buyNowText}>Go Back</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      </AuroraBackground>
+    );
+  }
+
   const name = product?.name || product?.productName || 'Product';
   const brand = product?.brand || product?.brandName || '';
   const category = product?.category || product?.categoryName || '';
-  const description = product?.description || 'A premium fitness product crafted to support your performance goals.';
-  const imgUri = product?.image || product?.images?.[0] || DUMMY_IMAGES[category] || DUMMY_IMAGES.default;
+  const description = product?.description || '';
+  const imgUri = productImage(product);
 
   const price = product?.price || product?.salePrice || 0;
   const originalPrice = product?.mrp || product?.originalPrice || null;
@@ -251,10 +260,12 @@ export default function ProductDetail() {
             </View>
 
             {/* Description card */}
-            <View style={s.glassCard}>
-              <Text style={s.cardHeading}>About this product</Text>
-              <Text style={s.descText}>{description}</Text>
-            </View>
+            {!!description && (
+              <View style={s.glassCard}>
+                <Text style={s.cardHeading}>About this product</Text>
+                <Text style={s.descText}>{description}</Text>
+              </View>
+            )}
 
             {/* Benefits/Highlights */}
             {bullets.length > 0 && (
@@ -284,7 +295,7 @@ export default function ProductDetail() {
             </View>
 
             {/* Spacer for buttons */}
-            <View style={{ height: 120 + bottomInset }} />
+            <View style={{ height: 92 + bottomInset }} />
           </Animated.View>
         </ScrollView>
 

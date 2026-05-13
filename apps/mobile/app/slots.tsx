@@ -8,15 +8,10 @@ import AuroraBackground from '../components/AuroraBackground';
 import { useLocalSearchParams, router } from 'expo-router';
 import { colors, fonts, radius } from '../theme/brand';
 import { IconCalendar, IconClock, IconArrowLeft, IconCheck, IconUsers } from '../components/Icons';
-import { api, subscriptionsApi, API_BASE } from '../lib/api';
+import { api, subscriptionsApi } from '../lib/api';
 import { getActiveSubscriptionAccess, normalizeSubscriptionList } from '../lib/subscriptionAccess';
 
-const FALLBACK_TYPES = [
-  { id: 'all', name: 'All', color: colors.accent },
-  { id: 'gym', name: 'Gym Workout', color: '#3DFF54' },
-  { id: 'cardio', name: 'Cardio', color: '#FB923C' },
-  { id: 'yoga', name: 'Yoga', color: '#22D3EE' },
-];
+const ALL_SESSION_TYPE = { id: 'all', name: 'All', color: colors.accent };
 
 function formatDate(d: Date) {
   return d.toISOString().split('T')[0];
@@ -38,24 +33,6 @@ function dayLabel(d: Date, index: number) {
   return d.toLocaleDateString('en-IN', { weekday: 'short' });
 }
 
-const FALLBACK_SLOTS = [
-  { id: 'sl1',  startTime: '06:00', endTime: '07:00', capacity: 20, booked: 8,  maxCapacity: 20, bookedCount: 8,  isFull: false, sessionTypeId: 'gym',    sessionType: { id: 'gym',    name: 'Gym Workout', color: '#3DFF54', durationMinutes: 60, instructor: 'Raj Kumar' } },
-  { id: 'sl2',  startTime: '06:00', endTime: '07:00', capacity: 15, booked: 10, maxCapacity: 15, bookedCount: 10, isFull: false, sessionTypeId: 'cardio', sessionType: { id: 'cardio', name: 'Cardio',      color: '#FB923C', durationMinutes: 60, instructor: 'Priya Das' } },
-  { id: 'sl3',  startTime: '07:00', endTime: '08:00', capacity: 20, booked: 14, maxCapacity: 20, bookedCount: 14, isFull: false, sessionTypeId: 'gym',    sessionType: { id: 'gym',    name: 'Gym Workout', color: '#3DFF54', durationMinutes: 60, instructor: 'Amit Singh' } },
-  { id: 'sl4',  startTime: '08:00', endTime: '09:00', capacity: 12, booked: 4,  maxCapacity: 12, bookedCount: 4,  isFull: false, sessionTypeId: 'yoga',   sessionType: { id: 'yoga',   name: 'Yoga',        color: '#22D3EE', durationMinutes: 60, instructor: 'Sunita Rao' } },
-  { id: 'sl5',  startTime: '08:00', endTime: '09:00', capacity: 20, booked: 20, maxCapacity: 20, bookedCount: 20, isFull: true,  sessionTypeId: 'cardio', sessionType: { id: 'cardio', name: 'Cardio',      color: '#FB923C', durationMinutes: 60, instructor: 'Priya Das' } },
-  { id: 'sl6',  startTime: '09:00', endTime: '10:00', capacity: 12, booked: 3,  maxCapacity: 12, bookedCount: 3,  isFull: false, sessionTypeId: 'yoga',   sessionType: { id: 'yoga',   name: 'Yoga',        color: '#22D3EE', durationMinutes: 60, instructor: 'Sunita Rao' } },
-  { id: 'sl7',  startTime: '09:00', endTime: '10:00', capacity: 20, booked: 11, maxCapacity: 20, bookedCount: 11, isFull: false, sessionTypeId: 'gym',    sessionType: { id: 'gym',    name: 'Gym Workout', color: '#3DFF54', durationMinutes: 60, instructor: 'Raj Kumar' } },
-  { id: 'sl8',  startTime: '17:00', endTime: '18:00', capacity: 20, booked: 15, maxCapacity: 20, bookedCount: 15, isFull: false, sessionTypeId: 'cardio', sessionType: { id: 'cardio', name: 'Cardio',      color: '#FB923C', durationMinutes: 60, instructor: 'Amit Singh' } },
-  { id: 'sl9',  startTime: '18:00', endTime: '19:00', capacity: 20, booked: 18, maxCapacity: 20, bookedCount: 18, isFull: false, sessionTypeId: 'gym',    sessionType: { id: 'gym',    name: 'Gym Workout', color: '#3DFF54', durationMinutes: 60, instructor: 'Raj Kumar' } },
-  { id: 'sl10', startTime: '18:00', endTime: '19:00', capacity: 10, booked: 5,  maxCapacity: 10, bookedCount: 5,  isFull: false, sessionTypeId: 'hiit',   sessionType: { id: 'hiit',   name: 'HIIT',        color: '#F59E0B', durationMinutes: 45, instructor: 'Vikram Nair' } },
-  { id: 'sl11', startTime: '19:00', endTime: '20:00', capacity: 12, booked: 8,  maxCapacity: 12, bookedCount: 8,  isFull: false, sessionTypeId: 'yoga',   sessionType: { id: 'yoga',   name: 'Yoga',        color: '#22D3EE', durationMinutes: 60, instructor: 'Sunita Rao' } },
-];
-
-const FALLBACK_BOOKINGS = [
-  { id: 'bk1', slot: { startTime: '07:00', endTime: '08:00', date: '2025-05-20' }, gym: { name: 'PowerZone Fitness' }, status: 'confirmed' },
-];
-
 export default function SlotsScreen() {
   const { gymId } = useLocalSearchParams<{ gymId?: string }>();
   const days = getNext7Days();
@@ -65,9 +42,8 @@ export default function SlotsScreen() {
   const [loading, setLoading] = useState(true);
   const [bookingId, setBookingId] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [sessionTypes, setSessionTypes] = useState<any[]>(FALLBACK_TYPES);
+  const [sessionTypes, setSessionTypes] = useState<any[]>([ALL_SESSION_TYPE]);
   const [activeType, setActiveType] = useState('all');
-  const [isFallback, setIsFallback] = useState(false);
   const [activeSub, setActiveSub] = useState<any>(null);
 
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -91,16 +67,10 @@ export default function SlotsScreen() {
         });
       }
 
-      if (items.length > 0) {
-        setSlots(items);
-        setIsFallback(false);
-      } else {
-        setSlots(FALLBACK_SLOTS);
-        setIsFallback(true);
-      }
-    } catch {
-      setSlots(FALLBACK_SLOTS);
-      setIsFallback(true);
+      setSlots(items);
+    } catch (e: any) {
+      setSlots([]);
+      setError(e?.message || 'Could not load slots for this date.');
     } finally {
       setLoading(false);
     }
@@ -110,9 +80,9 @@ export default function SlotsScreen() {
     try {
       const res: any = await api.get('/sessions/my-bookings');
       const items = Array.isArray(res) ? res : res?.bookings ?? res?.data ?? [];
-      setMyBookings(items.length > 0 ? items : FALLBACK_BOOKINGS);
+      setMyBookings(items);
     } catch {
-      setMyBookings(FALLBACK_BOOKINGS);
+      setMyBookings([]);
     }
   };
 
@@ -121,15 +91,12 @@ export default function SlotsScreen() {
     loadMyBookings();
     // Fetch session types for this gym
     if (gymId) {
-      fetch(`${API_BASE}/api/v1/sessions/types/${gymId}`)
-        .then(r => r.json())
+      api.get(`/sessions/types/${gymId}`)
         .then((data: any) => {
           const list = Array.isArray(data) ? data : [];
-          if (list.length > 0) {
-            setSessionTypes([{ id: 'all', name: 'All', color: colors.accent }, ...list]);
-          }
+          setSessionTypes([ALL_SESSION_TYPE, ...list]);
         })
-        .catch(() => {});
+        .catch(() => setSessionTypes([ALL_SESSION_TYPE]));
 
       subscriptionsApi.mySubscriptions()
         .then((data: any) => {
@@ -261,12 +228,6 @@ export default function SlotsScreen() {
           <Text style={s.sectionTitle}>Available Slots</Text>
         </View>
 
-        {isFallback && !loading && (
-          <View style={s.fallbackBanner}>
-            <Text style={s.fallbackBannerText}>⚠️ Sample schedule — this gym hasn't added real slots yet</Text>
-          </View>
-        )}
-
         {loading ? (
           <ActivityIndicator color={colors.accent} style={{ marginTop: 24 }} />
         ) : (() => {
@@ -281,6 +242,7 @@ export default function SlotsScreen() {
           if (filtered.length === 0) {
             return (
               <View style={s.emptyState}>
+                {!!error && <Text style={[s.emptyText, { color: '#ff6b6b', marginBottom: 6 }]}>{error}</Text>}
                 <Text style={s.emptyText}>
                   {slots.length === 0
                     ? 'No slots available for this date'
@@ -382,8 +344,6 @@ const s = StyleSheet.create({
   title: { fontFamily: fonts.serif, fontSize: 24, color: '#fff', letterSpacing: -0.5 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   sectionTitle: { fontFamily: fonts.serif, fontSize: 18, color: '#fff', letterSpacing: -0.3 },
-  fallbackBanner: { backgroundColor: 'rgba(251,146,60,0.12)', borderWidth: 1, borderColor: 'rgba(251,146,60,0.3)', borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14, marginBottom: 14 },
-  fallbackBannerText: { fontFamily: fonts.sans, fontSize: 12, color: '#FB923C' },
   dayChip: {
     paddingHorizontal: 14, paddingVertical: 10, borderRadius: radius.md,
     backgroundColor: colors.glass, borderWidth: 1, borderColor: colors.borderGlass,

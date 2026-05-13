@@ -15,12 +15,7 @@ import { router } from 'expo-router';
 import { colors, fonts, radius } from '../theme/brand';
 import { IconArrowLeft, IconChevronRight, IconPin, IconStar } from '../components/Icons';
 import { api } from '../lib/api';
-
-const FALLBACK_SPA_CENTRES = [
-  { id: 'p1', name: 'Serenity Spa & Wellness', serviceType: 'Spa', city: 'Bhubaneswar', area: 'Patia', rating: 4.7, reviewCount: 128, photos: ['https://images.unsplash.com/photo-1507652313519-d4e9174996dd?w=700&q=80'], minPrice: 999, serviceCount: 8 },
-  { id: 'p2', name: 'The Royal Spa', serviceType: 'Massage', city: 'Bhubaneswar', area: 'Saheed Nagar', rating: 4.5, reviewCount: 96, photos: ['https://images.unsplash.com/photo-1612817288484-6f916006741a?w=700&q=80'], minPrice: 799, serviceCount: 6 },
-  { id: 'p3', name: 'Bliss Physio Clinic', serviceType: 'Physio', city: 'Bhubaneswar', area: 'Nayapalli', rating: 4.6, reviewCount: 84, photos: ['https://images.unsplash.com/photo-1559756994-9df0adf7bff9?w=700&q=80'], minPrice: 699, serviceCount: 5 },
-];
+import { wellnessPartnerImage } from '../lib/imageFallbacks';
 
 const CATEGORIES = ['All', 'Spa', 'Massage', 'Physio', 'Recovery'];
 
@@ -45,6 +40,7 @@ export default function SpaCentresScreen() {
   const [partners, setPartners] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(true);
   const [category, setCategory] = useState('All');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -53,10 +49,13 @@ export default function SpaCentresScreen() {
         if (!active) return;
         const raw: Partner[] = Array.isArray(res) ? res : res?.data || [];
         const spaCentres = raw.filter((partner) => !isHomeService(partner));
-        setPartners(spaCentres.length ? spaCentres : FALLBACK_SPA_CENTRES);
+        setPartners(spaCentres);
       })
-      .catch(() => {
-        if (active) setPartners(FALLBACK_SPA_CENTRES);
+      .catch((e: any) => {
+        if (active) {
+          setPartners([]);
+          setError(e?.message || 'Could not load spa centres.');
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -104,7 +103,7 @@ export default function SpaCentresScreen() {
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.list}>
           {filtered.map((partner, index) => {
-            const image = partner.photos?.[0] || FALLBACK_SPA_CENTRES[index % FALLBACK_SPA_CENTRES.length].photos[0];
+            const image = wellnessPartnerImage(partner);
             return (
               <TouchableOpacity
                 key={partner.id}
@@ -116,13 +115,13 @@ export default function SpaCentresScreen() {
                   <LinearGradient colors={['transparent', 'rgba(0,0,0,0.86)']} style={s.heroShade}>
                     <View style={s.ratingPill}>
                       <IconStar size={12} color={colors.star} />
-                      <Text style={s.ratingText}>{Number(partner.rating || 4.5).toFixed(1)}</Text>
+                    <Text style={s.ratingText}>{partner.rating ? Number(partner.rating).toFixed(1) : '--'}</Text>
                       <Text style={s.reviewText}>({partner.reviewCount || 0})</Text>
                     </View>
                     <Text style={s.cardTitle} numberOfLines={1}>{partner.name}</Text>
                     <View style={s.locationRow}>
                       <IconPin size={12} color={colors.accent} />
-                      <Text style={s.locationText} numberOfLines={1}>{partner.area || 'Nearby'}, {partner.city || 'Bhubaneswar'}</Text>
+                      <Text style={s.locationText} numberOfLines={1}>{[partner.area, partner.city].filter(Boolean).join(', ') || 'Location not added'}</Text>
                     </View>
                   </LinearGradient>
                 </ImageBackground>
@@ -130,11 +129,11 @@ export default function SpaCentresScreen() {
                 <View style={s.cardFooter}>
                   <View>
                     <Text style={s.metaLabel}>{partner.serviceCount || 0} services available</Text>
-                    <Text style={s.price}>From Rs {Number(partner.minPrice || 699).toLocaleString('en-IN')}</Text>
+                    <Text style={s.price}>{partner.minPrice ? `From Rs ${Number(partner.minPrice).toLocaleString('en-IN')}` : 'Pricing not added'}</Text>
                   </View>
                   <View style={s.viewBtn}>
-                    <Text style={s.viewText}>View</Text>
-                    <IconChevronRight size={13} color="#060606" />
+                    <Text style={s.viewText}>View Services</Text>
+                    <IconChevronRight size={13} color={colors.accent} />
                   </View>
                 </View>
               </TouchableOpacity>
@@ -144,7 +143,7 @@ export default function SpaCentresScreen() {
           {filtered.length === 0 && (
             <View style={s.empty}>
               <Text style={s.emptyTitle}>No spa centres found</Text>
-              <Text style={s.emptyText}>Try another category.</Text>
+              <Text style={s.emptyText}>{error || 'Try another category.'}</Text>
             </View>
           )}
         </ScrollView>
@@ -196,15 +195,19 @@ const s = StyleSheet.create({
   cardTitle: { fontFamily: fonts.sansBold, fontSize: 19, color: '#fff', marginBottom: 5 },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   locationText: { flex: 1, fontFamily: fonts.sans, fontSize: 12, color: 'rgba(255,255,255,0.72)' },
-  cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14 },
+  cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: 14 },
   metaLabel: { fontFamily: fonts.sans, fontSize: 11, color: colors.t2, marginBottom: 3 },
   price: { fontFamily: fonts.sansBold, fontSize: 16, color: colors.accent },
   viewBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: colors.accent, borderRadius: radius.pill,
-    paddingHorizontal: 16, paddingVertical: 9,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+    borderRadius: radius.pill,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  viewText: { fontFamily: fonts.sansBold, fontSize: 13, color: '#060606' },
+  viewText: { fontFamily: fonts.sansBold, fontSize: 12, color: colors.accent },
   empty: { alignItems: 'center', paddingTop: 70 },
   emptyTitle: { fontFamily: fonts.sansBold, fontSize: 16, color: '#fff', marginBottom: 6 },
   emptyText: { fontFamily: fonts.sans, fontSize: 13, color: colors.t2 },

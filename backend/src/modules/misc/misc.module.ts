@@ -93,6 +93,7 @@ class MasterDataService {
   constructor(
     @InjectRepository(CategoryEntity) private readonly categories: Repository<CategoryEntity>,
     @InjectRepository(AmenityEntity) private readonly amenities: Repository<AmenityEntity>,
+    @InjectRepository(GymEntity) private readonly gyms: Repository<GymEntity>,
   ) {}
   listCategories() { return this.categories.find({ where: { isActive: true } }); }
   createCategory(d: Partial<CategoryEntity>) { return this.categories.save(this.categories.create(d)); }
@@ -102,7 +103,24 @@ class MasterDataService {
       order: { name: 'ASC' },
     });
   }
-  createAmenity(d: Partial<AmenityEntity>) { return this.amenities.save(this.amenities.create({ ...d, status: 'approved' })); }
+  async createAmenity(d: Partial<AmenityEntity>) {
+    const clean = d.name?.trim();
+    if (!clean) throw new BadRequestException('Amenity name is required');
+    const existing = await this.amenities.findOne({ where: { name: clean } });
+    if (existing) {
+      await this.amenities.update(existing.id, {
+        ...d,
+        name: clean,
+        status: 'approved',
+        isActive: true,
+        requestedByGym: false,
+        requestedByGymId: null,
+        requestedByUserId: null,
+      });
+      return this.amenities.findOne({ where: { id: existing.id } });
+    }
+    return this.amenities.save(this.amenities.create({ ...d, name: clean, status: 'approved', isActive: true }));
+  }
   async requestAmenity(name: string, gymId?: string, userId?: string) {
     const clean = name?.trim();
     if (!clean) throw new BadRequestException('Amenity name is required');
@@ -116,6 +134,17 @@ class MasterDataService {
       status: 'pending',
       isActive: false,
     }));
+  }
+  async requestAmenityForUser(name: string, userId?: string) {
+    const gym = userId ? await this.gyms.findOne({ where: { ownerId: userId } }) : null;
+    return this.requestAmenity(name, gym?.id, userId);
+  }
+  async listAmenityRequestsForUser(userId?: string) {
+    if (!userId) return [];
+    const gym = await this.gyms.findOne({ where: { ownerId: userId } });
+    const where: any[] = [{ requestedByUserId: userId }];
+    if (gym?.id) where.push({ requestedByGymId: gym.id });
+    return this.amenities.find({ where, order: { name: 'ASC' } });
   }
   approveAmenity(id: string) { return this.amenities.update(id, { status: 'approved', isActive: true }); }
   deleteCategory(id: string) { return this.categories.update(id, { isActive: false } as any); }
@@ -239,13 +268,19 @@ class MasterController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('super_admin')
   @Delete('categories/:id') delCat(@Param('id') id: string) { return this.svc.deleteCategory(id); }
-  @Get('amenities') am(@Query('includeAll') includeAll?: string) { return this.svc.listAmenities(includeAll === 'true'); }
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('super_admin')
+  @Get('amenities/all') allAm() { return this.svc.listAmenities(true); }
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('gym_owner', 'gym_staff')
+  @Get('amenities/my-requests') myAmenityRequests(@Req() req: any) { return this.svc.listAmenityRequestsForUser(req.user?.userId); }
+  @Get('amenities') am() { return this.svc.listAmenities(false); }
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('super_admin')
   @Post('amenities') newAm(@Body() b: any) { return this.svc.createAmenity(b); }
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('gym_owner', 'gym_staff')
-  @Post('amenities/request') req(@Body() b: { name: string; gymId?: string }, @Req() req: any) { return this.svc.requestAmenity(b.name, b.gymId, req.user?.userId); }
+  @Post('amenities/request') req(@Body() b: { name: string }, @Req() req: any) { return this.svc.requestAmenityForUser(b.name, req.user?.userId); }
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('super_admin')
   @Post('amenities/:id/approve') ap(@Param('id') id: string) { return this.svc.approveAmenity(id); }
@@ -283,10 +318,6 @@ export class FraudService {
   constructor(@InjectRepository(FraudAlertEntity) private readonly repo: Repository<FraudAlertEntity>) {}
 
   async list(page: any = 1, limit: any = 20, status?: string) {
-    const count = await this.repo.count();
-    if (count === 0) {
-      await this.repo.save(SEED_ALERTS.map((a) => this.repo.create(a)));
-    }
     const { skip, take, page: p, limit: l } = paginate(page, limit);
     const qb = this.repo.createQueryBuilder('f').orderBy('f.createdAt', 'DESC').skip(skip).take(take);
     if (status) qb.andWhere('f.status = :status', { status });
@@ -403,10 +434,8 @@ class HomepageController {
 
   private async loadConfig(): Promise<any> {
     const row = await this.configRepo.findOne({ where: { key: HOMEPAGE_CONFIG_KEY } });
-    // Reseed if missing or old v1 format (no _version)
     if (!row?.value || !(row.value as any)._version) {
-      await this.configRepo.save({ key: HOMEPAGE_CONFIG_KEY, value: DEFAULT_HOMEPAGE_CONFIG });
-      return DEFAULT_HOMEPAGE_CONFIG;
+      return { _version: 2, sections: [] };
     }
     return row.value;
   }
@@ -453,6 +482,46 @@ class HomepageController {
   }
 }
 
+// ============ Admin Settings ============
+const ADMIN_SETTINGS_KEY = 'admin_settings';
+
+const DEFAULT_ADMIN_SETTINGS = {
+  commission: { standard: 15, premium: 12, corporate: 10 },
+  settlements: { cycle: 'Monthly', minPayout: 5000, processingWindow: 7 },
+  flags: { storeModule: true, wellnessBooking: true, aiRecommendations: false, corporatePortal: true, mapView: false },
+};
+
+@ApiTags('Admin Settings')
+@Controller('admin/settings')
+class AdminSettingsController {
+  constructor(@InjectRepository(AppConfigEntity) private readonly configRepo: Repository<AppConfigEntity>) {}
+
+  private mergeSettings(value: any) {
+    return {
+      commission: { ...DEFAULT_ADMIN_SETTINGS.commission, ...(value?.commission || {}) },
+      settlements: { ...DEFAULT_ADMIN_SETTINGS.settlements, ...(value?.settlements || {}) },
+      flags: { ...DEFAULT_ADMIN_SETTINGS.flags, ...(value?.flags || {}) },
+    };
+  }
+
+  @Get()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('super_admin')
+  async getSettings() {
+    const row = await this.configRepo.findOne({ where: { key: ADMIN_SETTINGS_KEY } });
+    return this.mergeSettings(row?.value);
+  }
+
+  @Put()
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('super_admin')
+  async saveSettings(@Body() body: any) {
+    const value = this.mergeSettings(body);
+    await this.configRepo.save({ key: ADMIN_SETTINGS_KEY, value });
+    return value;
+  }
+}
+
 // In-memory commission rate config (no DB migration needed, admin-only)
 const DEFAULT_COMMISSION_RATES = [
   { id: '1', planType: 'Individual', commission: 15, minGyms: 1, maxGyms: 1 },
@@ -462,20 +531,29 @@ const DEFAULT_COMMISSION_RATES = [
   { id: '5', planType: 'Corporate', commission: 8, minGyms: 10, maxGyms: 999 },
 ];
 
-const commissionRatesStore = [...DEFAULT_COMMISSION_RATES];
+const COMMISSION_RATES_KEY = 'commission_rates';
 
 @ApiTags('Commission')
 @Controller('commission')
 class CommissionController {
+  constructor(@InjectRepository(AppConfigEntity) private readonly configRepo: Repository<AppConfigEntity>) {}
+
+  private async loadRates() {
+    const row = await this.configRepo.findOne({ where: { key: COMMISSION_RATES_KEY } });
+    return Array.isArray(row?.value) ? row.value : DEFAULT_COMMISSION_RATES;
+  }
+
   @Get('rates') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('super_admin')
-  getRates() { return commissionRatesStore; }
+  getRates() { return this.loadRates(); }
 
   @Put('rates/:id') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('super_admin')
-  updateRate(@Param('id') id: string, @Body() body: { commission?: number; minGyms?: number; maxGyms?: number }) {
-    const idx = commissionRatesStore.findIndex((r) => r.id === id);
+  async updateRate(@Param('id') id: string, @Body() body: { commission?: number; minGyms?: number; maxGyms?: number }) {
+    const rates = await this.loadRates();
+    const idx = rates.findIndex((r: any) => r.id === id);
     if (idx === -1) return { error: 'Not found' };
-    commissionRatesStore[idx] = { ...commissionRatesStore[idx], ...body };
-    return commissionRatesStore[idx];
+    rates[idx] = { ...rates[idx], ...body };
+    await this.configRepo.save({ key: COMMISSION_RATES_KEY, value: rates });
+    return rates[idx];
   }
 }
 
@@ -485,7 +563,7 @@ class CommissionController {
     CheckinEntity, UserEntity, SubscriptionEntity, GymEntity, FraudAlertEntity,
     AppConfigEntity, ProductEntity,
   ])],
-  controllers: [RatingsController, CouponsController, NotificationsController, MasterController, VideosController, AnalyticsController, FraudController, CommissionController, HomepageController],
+  controllers: [RatingsController, CouponsController, NotificationsController, MasterController, VideosController, AnalyticsController, FraudController, CommissionController, HomepageController, AdminSettingsController],
   providers: [RatingsService, CouponsService, NotificationsService, MasterDataService, VideosService, AnalyticsService, FraudService],
   exports: [RatingsService, CouponsService, NotificationsService, MasterDataService, VideosService, FraudService],
 })

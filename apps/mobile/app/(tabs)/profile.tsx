@@ -123,7 +123,7 @@ export default function Profile() {
 }
 
 const s = StyleSheet.create({
-  container: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 132 },
+  container: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 36 },
   avatarSection: { alignItems: 'center', marginBottom: 20 },
   avatar: {
     width: 80, height: 80, borderRadius: 40,

@@ -134,7 +134,7 @@ export default function KycTracker() {
             </TouchableOpacity>
           )}
 
-          <View style={{ height: 40 }} />
+          <View style={{ height: 8 }} />
         </ScrollView>
       )}
     </SafeAreaView>
@@ -151,7 +151,7 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center',
   },
   headerTitle: { fontFamily: fonts.serif, fontSize: 20, color: '#fff' },
-  scroll: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 132 },
+  scroll: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 36 },
   progressCard: {
     backgroundColor: 'rgba(0,212,106,0.06)',
     borderWidth: 1, borderColor: 'rgba(0,212,106,0.18)',

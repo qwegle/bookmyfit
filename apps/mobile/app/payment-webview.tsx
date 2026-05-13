@@ -6,7 +6,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import Constants from 'expo-constants';
 import { colors, fonts, radius, spacing } from '../theme/brand';
 import { IconArrowLeft, IconCheck } from '../components/Icons';
-import { subscriptionsApi, api } from '../lib/api';
+import { subscriptionsApi, api, API_BASE } from '../lib/api';
 
 const CASHFREE_BASE_URL: string =
   (Constants.expoConfig?.extra as any)?.cashfreeBaseUrl ?? 'https://sandbox.cashfree.com';
@@ -29,6 +29,7 @@ export default function PaymentWebview() {
   // Support both old 'sessionId' param and new 'paymentSessionId' param
   const effectiveSessionId = paymentSessionId || sessionId || '';
   const isMock = effectiveSessionId.startsWith('mock_session_');
+  const allowMockPayment = __DEV__ || API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1');
 
   // Build Cashfree checkout URL; use session-based URL when session ID available
   const checkoutUrl = effectiveSessionId && !isMock
@@ -107,6 +108,22 @@ export default function PaymentWebview() {
   };
 
   // ── Mock Payment Screen (dev / sandbox without Cashfree keys) ────────────
+  if (isMock && !allowMockPayment) {
+    return (
+      <SafeAreaView style={s.container}>
+        <View style={s.header}>
+          <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
+            <IconArrowLeft size={18} color="#fff" />
+          </TouchableOpacity>
+          <Text style={s.headerTitle}>Payment unavailable</Text>
+        </View>
+        <View style={s.loadingOverlay}>
+          <Text style={s.loadingText}>This payment session is not valid for production checkout.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   if (isMock) {
     return (
       <SafeAreaView style={s.container}>

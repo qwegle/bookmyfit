@@ -1,25 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, View, Text, StyleSheet, TouchableOpacity, ImageBackground, ActivityIndicator, Dimensions, TextInput, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { colors, fonts, radius } from '../theme/brand';
 import { IconArrowLeft, IconStar, IconPin, IconSearch } from '../components/Icons';
 import { gymsApi } from '../lib/api';
+import { DEFAULT_GYM_IMAGE, firstImage } from '../lib/imageFallbacks';
 
 const { width: W } = Dimensions.get('window');
-
-const AREA_FILTERS = ['All Areas', 'Patia', 'Saheed Nagar', 'Nayapalli', 'IRC Village', 'Jaydev Vihar', 'Chandrasekharpur', 'Khandagiri'];
-
-const FALLBACK_GYMS = [
-  { id: 'bf67d2fc-4b70-43e3-93c4-da533e5caa09', name: "Cult.fit Bhubaneswar",      city: 'Bhubaneswar', area: 'Patia',            rating: 4.8, images: ['https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=600&q=80'], amenities: ['AC', 'Parking', 'Pool'] },
-  { id: 'c5b25fd2-c918-4bf4-a7c5-35170f0155b1', name: "Gold's Gym Bhubaneswar",    city: 'Bhubaneswar', area: 'Chandrasekharpur', rating: 4.7, images: ['https://images.unsplash.com/photo-1532384661954-a0e26f4f065c?w=600&q=80'], amenities: ['AC', 'Sauna', 'Steam Room'] },
-  { id: '547b28de-54cf-4f3a-a036-c1f9294066e6', name: 'CrossFit Bhubaneswar',      city: 'Bhubaneswar', area: 'Jaydev Vihar',     rating: 4.6, images: ['https://images.unsplash.com/photo-1549476464-37392f717541?w=600&q=80'], amenities: ['AC', 'Parking'] },
-  { id: '554d5de4-38c0-4b87-a2f4-51e0124e859f', name: 'Anytime Fitness',           city: 'Bhubaneswar', area: 'Saheed Nagar',     rating: 4.5, images: ['https://images.unsplash.com/photo-1605296867304-46d5465a13f1?w=600&q=80'], amenities: ['AC', '24/7 Access'] },
-  { id: '9275177c-765d-4ad8-ac13-6cda17ba4edc', name: 'Fitness First Bhubaneswar', city: 'Bhubaneswar', area: 'IRC Village',      rating: 4.5, images: ['https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=600&q=80'], amenities: ['AC', 'Pool', 'Yoga'] },
-  { id: '28ec2ef5-a659-41f3-aef2-0a0be52f4f16', name: 'Iron House Gym',            city: 'Bhubaneswar', area: 'Nayapalli',        rating: 4.4, images: ['https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80'], amenities: ['AC', 'Shower', 'Locker'] },
-  { id: 'f25d299d-8f81-4dbb-a8aa-8980a5c61769', name: 'PowerHouse Fitness',        city: 'Bhubaneswar', area: 'Khandagiri',       rating: 4.3, images: ['https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80'], amenities: ['AC', 'Shower'] },
-  { id: 'bf3669fb-302b-47a0-be49-34d38233116f', name: 'Flex Fitness Studio',       city: 'Bhubaneswar', area: 'Damana',           rating: 4.2, images: ['https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80'], amenities: ['AC', 'Zumba'] },
-];
 
 function SkRow() {
   return (
@@ -39,16 +27,33 @@ export default function MultiGymNetwork() {
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
   const [activeArea, setActiveArea] = useState('All Areas');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     gymsApi.list({ page: 1, limit: 50 })
       .then((data: any) => {
         const list = Array.isArray(data) ? data : data?.gyms || data?.data || [];
-        setGyms(list.length > 0 ? list : FALLBACK_GYMS);
+        setGyms(list);
+        setError(null);
       })
-      .catch(() => setGyms(FALLBACK_GYMS))
+      .catch(() => {
+        setGyms([]);
+        setError('Could not load partner gyms from the API.');
+      })
       .finally(() => setLoading(false));
   }, []);
+
+  const areaFilters = useMemo(() => {
+    const seen = new Set<string>();
+    const areas = gyms
+      .map((gym: any) => gym.area || gym.location?.area || '')
+      .filter((area: string) => {
+        if (!area || seen.has(area)) return false;
+        seen.add(area);
+        return true;
+      });
+    return ['All Areas', ...areas];
+  }, [gyms]);
 
   const filtered = gyms.filter((gym: any) => {
     const area = gym.area || gym.location?.area || '';
@@ -99,7 +104,7 @@ export default function MultiGymNetwork() {
 
       {/* Area filter chips */}
       <FlatList
-        data={AREA_FILTERS}
+        data={areaFilters}
         horizontal
         showsHorizontalScrollIndicator={false}
         keyExtractor={a => a}
@@ -123,7 +128,7 @@ export default function MultiGymNetwork() {
         ) : filtered.length === 0 ? (
           <View style={{ alignItems: 'center', paddingTop: 40, gap: 8 }}>
             <Text style={{ fontFamily: fonts.serif, fontSize: 18, color: '#fff' }}>No gyms found</Text>
-            <Text style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.t2 }}>Try a different search or area</Text>
+            <Text style={{ fontFamily: fonts.sans, fontSize: 13, color: colors.t2, textAlign: 'center' }}>{error || 'Try a different search or area'}</Text>
           </View>
         ) : (
           filtered.map((gym: any) => {
@@ -132,7 +137,7 @@ export default function MultiGymNetwork() {
             const city = gym.city || '';
             const area = gym.area || gym.location?.area || '';
             const rating = Number(gym.rating || gym.avgRating || 0);
-            const img = gym.images?.[0] || gym.coverImage || 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=400&q=80';
+            const img = firstImage(gym.images, gym.photos, gym.coverImage, gym.coverPhoto) || DEFAULT_GYM_IMAGE;
             const amenities: string[] = (gym.amenities || []).slice(0, 3);
 
             return (
@@ -172,7 +177,7 @@ export default function MultiGymNetwork() {
             );
           })
         )}
-        <View style={{ height: 32 }} />
+        <View style={{ height: 8 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -214,7 +219,7 @@ const s = StyleSheet.create({
   areaChipActive: { backgroundColor: colors.accentSoft, borderColor: colors.accentBorder },
   areaChipText: { fontFamily: fonts.sansMedium, fontSize: 11, color: colors.t2 },
   areaChipTextActive: { color: colors.accent },
-  container: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 40 },
+  container: { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 24 },
   gymCard: {
     flexDirection: 'row', gap: 12,
     backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: radius.xl,
@@ -222,6 +227,7 @@ const s = StyleSheet.create({
     padding: 10, marginBottom: 12, alignItems: 'center',
   },
   gymThumb: { width: 80, height: 80, borderRadius: radius.md, overflow: 'hidden' },
+  gymThumbEmpty: { width: 80, height: 80, borderRadius: radius.md, backgroundColor: colors.glass, borderWidth: 1, borderColor: colors.borderGlass, alignItems: 'center', justifyContent: 'center' },
   thumbDark: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.2)' },
   gymInfo: { flex: 1, gap: 4 },
   gymName: { fontFamily: fonts.sansBold, fontSize: 14, color: '#fff' },

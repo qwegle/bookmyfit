@@ -115,7 +115,7 @@ export default function BookServiceScreen() {
 
         <ScrollView
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: 120 + bottomInset }}
+          contentContainerStyle={{ paddingBottom: 96 + bottomInset }}
         >
           {/* Service Summary Card */}
           <View style={s.summaryCard}>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch,
+  Alert, View, Text, StyleSheet, TouchableOpacity, ScrollView, Switch,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AuroraBackground from '../components/AuroraBackground';
@@ -44,7 +44,8 @@ export default function Duration() {
     planId: string; planName: string; gymId?: string; gymName?: string; basePrice?: string; isDayPass?: string; gymPlansJson?: string;
   }>();
 
-  const monthlyBase = Number(basePrice) || 999;
+  const routeBase = Number(basePrice);
+  const monthlyBase = Number.isFinite(routeBase) && routeBase > 0 ? routeBase : null;
   const isPlanDayPass = planId === 'day_pass' || isDayPassParam === 'true';
   const gymPlanOptions = useMemo(() => {
     if (!gymPlansJson || planId !== 'same_gym') return [];
@@ -66,7 +67,9 @@ export default function Duration() {
 
   const DURATIONS: DurationOption[] = useMemo(() => {
     if (isPlanDayPass) {
-      return [{ months: 0, label: '1 Day Pass', sublabel: 'Single visit', price: monthlyBase, save: null, isDayPass: true, hot: false }];
+      return monthlyBase
+        ? [{ months: 0, label: '1 Day Pass', sublabel: 'Single visit', price: monthlyBase, save: null, isDayPass: true, hot: false }]
+        : [];
     }
     if (planId === 'same_gym' && gymPlanOptions.length > 0) {
       return gymPlanOptions
@@ -74,7 +77,7 @@ export default function Duration() {
         .sort((a, b) => a.days - b.days)
         .map((plan) => {
           const months = Math.max(1, Math.round(plan.days / 30));
-          const rackTotal = monthlyBase * months;
+          const rackTotal = (monthlyBase || (plan.price / months)) * months;
           const savePct = rackTotal > plan.price ? Math.round((1 - plan.price / rackTotal) * 100) : 0;
           return {
             months,
@@ -88,6 +91,8 @@ export default function Duration() {
           };
         });
     }
+    if (planId === 'same_gym') return [];
+    if (!monthlyBase) return [];
     return [
       { months: 1, label: '1 Month', sublabel: 'Most flexible', price: monthlyBase, save: null, isDayPass: false, hot: false },
       { months: 3, label: '3 Months', sublabel: 'Popular choice', price: Math.round(monthlyBase * 3 * 0.92), save: 'Save 8%', isDayPass: false, hot: false },
@@ -100,7 +105,7 @@ export default function Duration() {
   const [ptAddon, setPtAddon] = useState(false);
   const [ptDurationMonths, setPtDurationMonths] = useState(1);
 
-  const dur = DURATIONS[selected] || DURATIONS[0];
+  const dur = DURATIONS[selected] || { months: 0, label: 'No active plan', sublabel: '', price: 0, save: null, isDayPass: true, hot: false };
   const base = dur.price;
   const ptCost = !dur.isDayPass && ptAddon ? PT_PRICE * ptDurationMonths : 0;
   const ptSessions = ptDurationMonths * 8;
@@ -122,6 +127,10 @@ export default function Duration() {
   }, [dur.isDayPass, dur.months]);
 
   const handleCheckout = () => {
+    if (DURATIONS.length === 0 || dur.price <= 0) {
+      Alert.alert('Plan unavailable', 'This plan does not have active pricing from the server yet. Please go back and choose another plan.');
+      return;
+    }
     router.push({
       pathname: '/order',
       params: {
@@ -150,8 +159,15 @@ export default function Duration() {
           <View style={{ width: 38 }} />
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[s.scroll, { paddingBottom: 320 + bottomInset }]}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={[s.scroll, { paddingBottom: 204 + bottomInset }]}>
           <Text style={s.kicker}>Membership Duration</Text>
+
+          {DURATIONS.length === 0 && (
+            <View style={s.ptCard}>
+              <Text style={s.ptTitle}>No active pricing found</Text>
+              <Text style={s.ptSub}>This plan cannot be purchased until pricing is configured in the backend.</Text>
+            </View>
+          )}
 
           {DURATIONS.map((d, i) => {
             const active = i === selected;
@@ -289,7 +305,7 @@ const s = StyleSheet.create({
   },
   headerTitle: { fontFamily: fonts.serif, fontSize: 20, color: '#fff' },
   scroll: { paddingHorizontal: 20, paddingTop: 8 },
-  scrollEndSpacer: { height: 24 },
+  scrollEndSpacer: { height: 8 },
   kicker: {
     fontSize: 10, letterSpacing: 3, textTransform: 'uppercase',
     color: colors.accent, fontFamily: fonts.sansBold, marginBottom: 16,

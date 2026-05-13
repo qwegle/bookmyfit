@@ -58,7 +58,7 @@ export default function ReportsPage() {
 
   useEffect(() => {
     setLoading(true);
-    // Try real endpoints first, then fall back to mock
+    // Build reports only from available API data; missing metrics stay empty.
     Promise.all([
       api.get<any>('/checkins/today').catch(() => null),
       api.get<any>('/settlements/my-gym').catch(() => null),
@@ -116,7 +116,7 @@ export default function ReportsPage() {
     URL.revokeObjectURL(url);
   }
 
-  const maxVal = report ? Math.max(...report.dailyCheckins.map((d) => d.count)) : 1;
+  const maxVal = report?.dailyCheckins.length ? Math.max(...report.dailyCheckins.map((d) => d.count), 1) : 1;
 
   return (
     <Shell title="Reports">

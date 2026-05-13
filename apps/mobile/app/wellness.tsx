@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  ScrollView, View, Text, TouchableOpacity, StyleSheet,
-  Image, FlatList, Dimensions, ActivityIndicator, Platform,
+  Alert, ScrollView, View, Text, TouchableOpacity, StyleSheet,
+  Image, FlatList, Dimensions, ActivityIndicator, Platform, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -11,30 +11,15 @@ import {
   IconShield, IconCheck, IconBuilding, IconHeadphones, IconBolt,
 } from '../components/Icons';
 import { API_BASE as API } from '../lib/api';
+import {
+  wellnessPartnerImage,
+  wellnessServiceImage,
+} from '../lib/imageFallbacks';
 
 const { width: W } = Dimensions.get('window');
 
-// Warm spa image map by partner name
-const SPA_IMAGES: Record<string, string> = {
-  'serenity': 'https://images.unsplash.com/photo-1507652313519-d4e9174996dd?w=600&q=80',
-  'royal': 'https://images.unsplash.com/photo-1612817288484-6f916006741a?w=600&q=80',
-  'bliss': 'https://images.unsplash.com/photo-1559756994-9df0adf7bff9?w=600&q=80',
-  'zen': 'https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?w=600&q=80',
-};
-const SPA_FALLBACKS = [
-  'https://images.unsplash.com/photo-1507652313519-d4e9174996dd?w=600&q=80',
-  'https://images.unsplash.com/photo-1612817288484-6f916006741a?w=600&q=80',
-  'https://images.unsplash.com/photo-1559756994-9df0adf7bff9?w=600&q=80',
-  'https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?w=600&q=80',
-];
-
-function getPartnerImage(partner: any, index: number): string {
-  if (partner.photos && partner.photos.length > 0) return partner.photos[0];
-  const nameLower = (partner.name || '').toLowerCase();
-  for (const key of Object.keys(SPA_IMAGES)) {
-    if (nameLower.includes(key)) return SPA_IMAGES[key];
-  }
-  return SPA_FALLBACKS[index % SPA_FALLBACKS.length];
+function getPartnerImage(partner: any): string {
+  return wellnessPartnerImage(partner);
 }
 
 // Static hero slides
@@ -55,20 +40,6 @@ const HERO_SLIDES = [
   },
 ];
 
-// Static popular services with warm spa images
-const STATIC_SERVICES: ApiService[] = [
-  { id: 's1', name: 'Full Body Massage', durationMinutes: 60, price: 1299, partnerId: '', imageUrl: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=400&q=80' },
-  { id: 's2', name: 'Aroma Therapy', durationMinutes: 60, price: 999, partnerId: '', imageUrl: 'https://images.unsplash.com/photo-1600334089648-b0d9d3028eb2?w=400&q=80' },
-  { id: 's3', name: 'Deep Tissue Massage', durationMinutes: 60, price: 1599, partnerId: '', imageUrl: 'https://images.unsplash.com/photo-1519824145371-296894a0daa9?w=400&q=80' },
-  { id: 's4', name: 'Body Scrub & Polish', durationMinutes: 75, price: 1199, partnerId: '', imageUrl: 'https://images.unsplash.com/photo-1610337673044-720471f83677?w=400&q=80' },
-  { id: 's5', name: 'Foot Reflexology', durationMinutes: 45, price: 699, partnerId: '', imageUrl: 'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=400&q=80' },
-  { id: 's6', name: 'Hot Stone Therapy', durationMinutes: 90, price: 1899, partnerId: '', imageUrl: 'https://images.unsplash.com/photo-1502086223501-7ea6ecd79368?w=400&q=80' },
-  { id: 's7', name: 'Cupping Therapy', durationMinutes: 45, price: 799, partnerId: '', imageUrl: 'https://images.unsplash.com/photo-1515377905703-c4788e51af15?w=400&q=80' },
-  { id: 's8', name: 'Swedish Massage', durationMinutes: 60, price: 1099, partnerId: '', imageUrl: 'https://images.unsplash.com/photo-1519824145371-296894a0daa9?w=400&q=80' },
-  { id: 's9', name: 'Sports Recovery', durationMinutes: 60, price: 1399, partnerId: '', imageUrl: 'https://images.unsplash.com/photo-1571019614099-9fdcf8b4e43b?w=400&q=80' },
-  { id: 's10', name: 'Home Full Body Massage', durationMinutes: 90, price: 1499, partnerId: '', imageUrl: 'https://images.unsplash.com/photo-1544161515-4ab6ce6db874?w=400&q=80' },
-];
-
 type ApiPartner = {
   id: string; name: string; serviceType: string; city: string; area: string;
   rating: number; reviewCount: number; distanceLabel: string; photos: string[];
@@ -81,13 +52,15 @@ type ApiService = {
 
 export default function WellnessScreen() {
   const [partners, setPartners] = useState<ApiPartner[]>([]);
-  const [services, setServices] = useState<ApiService[]>(STATIC_SERVICES);
+  const [services, setServices] = useState<ApiService[]>([]);
   const [loading, setLoading] = useState(true);
   const [likedIds, setLikedIds] = useState<Set<string>>(new Set());
   const [heroIndex, setHeroIndex] = useState(0);
   const [activeFilter, setActiveFilter] = useState<'all' | 'spa' | 'home'>('all');
   const heroRef = useRef<FlatList>(null);
   const heroTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { width: screenW } = useWindowDimensions();
+  const heroW = Math.max(1, Math.round(screenW || W));
 
   useEffect(() => {
     Promise.all([
@@ -127,15 +100,8 @@ export default function WellnessScreen() {
     return Math.min(...partnerServices.map(s => Number(s.price)));
   };
 
-  // Static fallback partners for demo
-  const displayPartners: ApiPartner[] = partners.length > 0 ? partners : [
-    { id: 'p1', name: 'Serenity Spa & Wellness', serviceType: 'Spa', city: 'Mumbai', area: 'Bandra', rating: 4.6, reviewCount: 128, distanceLabel: '1.2 km', photos: [], discountPercent: 20 },
-    { id: 'p2', name: 'The Royal Spa', serviceType: 'Massage', city: 'Mumbai', area: 'Andheri', rating: 4.4, reviewCount: 96, distanceLabel: '2.3 km', photos: [], discountPercent: 15 },
-    { id: 'p3', name: 'Bliss Physio Clinic', serviceType: 'Physio', city: 'Mumbai', area: 'Juhu', rating: 4.5, reviewCount: 84, distanceLabel: '3.1 km', photos: [], discountPercent: 0 },
-    { id: 'p4', name: 'Zen Wellness Studio', serviceType: 'Spa', city: 'Mumbai', area: 'Worli', rating: 4.7, reviewCount: 152, distanceLabel: '1.8 km', photos: [], discountPercent: 10 },
-  ];
-
-  const displayServices: ApiService[] = services.length > 0 ? services : STATIC_SERVICES;
+  const displayPartners: ApiPartner[] = partners;
+  const displayServices: ApiService[] = services;
   const filteredServices = displayServices;
 
   const partnersByType = activeFilter === 'all'
@@ -175,6 +141,7 @@ export default function WellnessScreen() {
         {/* Hero Slider */}
         <View style={s.heroContainer}>
           <FlatList
+            key={`wellness-hero-${heroW}`}
             ref={heroRef}
             data={HERO_SLIDES}
             horizontal
@@ -182,12 +149,16 @@ export default function WellnessScreen() {
             showsHorizontalScrollIndicator={false}
             keyExtractor={(_, i) => String(i)}
             onMomentumScrollEnd={e => {
-              const idx = Math.round(e.nativeEvent.contentOffset.x / W);
-              setHeroIndex(idx);
+              const idx = Math.round(e.nativeEvent.contentOffset.x / heroW);
+              setHeroIndex(Math.min(HERO_SLIDES.length - 1, Math.max(0, idx)));
+            }}
+            getItemLayout={(_, index) => ({ length: heroW, offset: heroW * index, index })}
+            onScrollToIndexFailed={(info) => {
+              setTimeout(() => heroRef.current?.scrollToOffset({ offset: heroW * info.index, animated: true }), 80);
             }}
             renderItem={({ item }) => (
-              <View style={s.heroSlide}>
-                <Image source={{ uri: item.uri }} style={s.heroImage} />
+              <View style={[s.heroSlide, { width: heroW }]}>
+                <Image source={{ uri: item.uri }} style={[s.heroImage, { width: heroW }]} />
                 <View style={s.heroOverlay} />
                 <View style={s.heroContent}>
                   <Text style={s.heroKicker}>{item.kicker}</Text>
@@ -246,8 +217,7 @@ export default function WellnessScreen() {
           keyExtractor={item => item.id}
           contentContainerStyle={s.servicesScroll}
           renderItem={({ item: svc }) => {
-            const imgUri = svc.imageUrl || STATIC_SERVICES.find(s => s.name === svc.name)?.imageUrl || STATIC_SERVICES[0].imageUrl;
-            const fallbackPartner = filteredPartners[0] || displayPartners[0];
+            const imgUri = wellnessServiceImage(svc);
             return (
               <TouchableOpacity
                 style={s.svcCard}
@@ -264,8 +234,8 @@ export default function WellnessScreen() {
                         duration: String(svc.durationMinutes),
                       },
                     } as any);
-                  } else if (fallbackPartner?.id) {
-                    router.push(`/wellness/${fallbackPartner.id}` as any);
+                  } else {
+                    Alert.alert('Service unavailable', 'This service is not linked to a wellness partner yet.');
                   }
                 }}
               >
@@ -308,9 +278,9 @@ export default function WellnessScreen() {
               <Text style={s.emptyTitle}>No wellness services found</Text>
               <Text style={s.emptyText}>No providers are available for this filter right now.</Text>
             </View>
-          ) : filteredPartners.map((partner, idx) => {
+          ) : filteredPartners.map((partner) => {
             const minPrice = getMinPrice(partner.id);
-            const imgUri = getPartnerImage(partner, idx);
+            const imgUri = getPartnerImage(partner);
             const liked = likedIds.has(partner.id);
             const tags = getPartnerTags(partner);
             return (
@@ -342,14 +312,14 @@ export default function WellnessScreen() {
                     <Text style={s.partnerName} numberOfLines={1}>{partner.name}</Text>
                     <View style={s.priceBlock}>
                       <Text style={s.priceFrom}>From</Text>
-                      <Text style={s.priceVal}>{minPrice ? `₹${Number(minPrice).toLocaleString('en-IN')}` : '₹999'}</Text>
+                      <Text style={s.priceVal}>{minPrice ? `₹${Number(minPrice).toLocaleString('en-IN')}` : 'Not added'}</Text>
                     </View>
                   </View>
 
                   {/* Row 2: rating */}
                   <View style={s.ratingRow}>
                     <IconStar size={12} color={colors.star} />
-                    <Text style={s.ratingText}>{partner.rating?.toFixed(1) || '4.5'}</Text>
+                    <Text style={s.ratingText}>{partner.rating ? partner.rating.toFixed(1) : '--'}</Text>
                     <Text style={s.reviewCount}>({partner.reviewCount || 0} reviews)</Text>
                   </View>
 
@@ -373,9 +343,11 @@ export default function WellnessScreen() {
                     <TouchableOpacity
                       style={s.viewBtn}
                       onPress={() => router.push(`/wellness/${partner.id}` as any)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`View services for ${partner.name}`}
                     >
                       <Text style={s.viewBtnText}>View Services</Text>
-                      <IconChevronRight size={12} color="#060606" />
+                      <IconChevronRight size={12} color={colors.accent} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -405,7 +377,7 @@ export default function WellnessScreen() {
           ))}
         </View>
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 8 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -413,7 +385,7 @@ export default function WellnessScreen() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg, paddingTop: Platform.OS === 'android' ? 24 : 0 },
-  content: { paddingBottom: 32 },
+  content: { paddingBottom: 16 },
 
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 2, paddingBottom: 8 },
   back: {
@@ -435,9 +407,9 @@ const s = StyleSheet.create({
   cartBadgeText: { fontFamily: fonts.sansBold, fontSize: 9, color: '#fff' },
 
   // Hero
-  heroContainer: { width: W, height: 212, marginBottom: 22 },
-  heroSlide: { width: W, height: 212, overflow: 'hidden' },
-  heroImage: { width: W, height: 212, resizeMode: 'cover' },
+  heroContainer: { width: '100%', height: 212, marginBottom: 22 },
+  heroSlide: { height: 212, overflow: 'hidden' },
+  heroImage: { height: 212, resizeMode: 'cover', backgroundColor: colors.surface },
   heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.52)' },
   heroContent: { position: 'absolute', bottom: 24, left: 20, right: 20 },
   heroKicker: { fontFamily: fonts.sansBold, fontSize: 10, color: colors.accent, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 6 },
@@ -504,15 +476,15 @@ const s = StyleSheet.create({
     flexDirection: 'row', marginHorizontal: 16, marginBottom: 12,
     backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 16,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', overflow: 'hidden',
-    height: 155,
+    minHeight: 166,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 6,
   },
-  partnerImgWrapper: { width: 120, height: 155, position: 'relative' },
-  partnerImg: { width: 120, height: 155, resizeMode: 'cover' },
+  partnerImgWrapper: { width: 122, minHeight: 166, position: 'relative', backgroundColor: colors.surface },
+  partnerImg: { width: 122, minHeight: 166, height: '100%', resizeMode: 'cover', backgroundColor: colors.surface },
   discountBadge: {
     position: 'absolute', top: 0, left: 0,
     backgroundColor: '#00D46A', paddingHorizontal: 6, paddingVertical: 3,
@@ -525,9 +497,9 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center',
   },
 
-  partnerInfo: { flex: 1, padding: 12, gap: 5 },
-  partnerRow1: { flexDirection: 'row', alignItems: 'flex-start', gap: 4 },
-  partnerName: { flex: 1, fontFamily: fonts.sansBold, fontSize: 14, color: '#fff' },
+  partnerInfo: { flex: 1, minWidth: 0, paddingHorizontal: 12, paddingVertical: 10, gap: 4 },
+  partnerRow1: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
+  partnerName: { flex: 1, minWidth: 0, fontFamily: fonts.sansBold, fontSize: 14, lineHeight: 18, color: '#fff' },
   priceBlock: { alignItems: 'flex-end' },
   priceFrom: { fontFamily: fonts.sans, fontSize: 9, color: colors.t2 },
   priceVal: { fontFamily: fonts.sansBold, fontSize: 16, color: colors.accent },
@@ -539,19 +511,26 @@ const s = StyleSheet.create({
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   locationText: { fontFamily: fonts.sans, fontSize: 11, color: colors.t2, flex: 1 },
 
-  tagsRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
+  tagsRow: { flexDirection: 'row', gap: 5, flexWrap: 'wrap' },
   tagPill: {
-    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6,
+    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6,
     backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
   },
   tagText: { fontFamily: fonts.sans, fontSize: 10, color: colors.t2 },
 
-  viewRow: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 4 },
+  viewRow: { flexDirection: 'row', justifyContent: 'flex-start', marginTop: 'auto' },
   viewBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#00D46A', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    minHeight: 36,
+    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: radius.pill,
+    alignSelf: 'flex-start',
   },
-  viewBtnText: { fontFamily: fonts.sansBold, fontSize: 12, color: '#060606' },
+  viewBtnText: { fontFamily: fonts.sansBold, fontSize: 12, color: colors.accent },
 
   // Trust strip
   trustStrip: {

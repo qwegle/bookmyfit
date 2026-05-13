@@ -71,9 +71,10 @@ class SubscriptionsService {
         planType: 'same_gym',
         name: 'Same Gym Pass',
         description: 'Unlimited access to your chosen gym',
-        basePrice: 599,
+        basePrice: null,
         features: ['Unlimited visits', 'One gym of your choice', 'Monthly subscription', 'Slot booking'],
-        note: 'Gym-specific pricing may vary. Browse gyms to see their plans.',
+        note: 'Same-gym memberships are priced by each gym. Select a gym to see active plans.',
+        requiresGymPlan: true,
       },
       multi_gym: { ...config.multi_gym, planType: 'multi_gym', name: 'Multi Gym Pass', basePrice: config.multi_gym?.basePrice || 1499 },
     };
@@ -97,6 +98,19 @@ class SubscriptionsService {
 
   private duplicateGymPassMessage(existing: any) {
     return `You already have an active pass for this gym${existing?.endDate ? ` until ${existing.endDate}` : ''}`;
+  }
+
+  private normalizeGymSummary(gym: any) {
+    if (!gym) return null;
+    const photos = Array.isArray(gym.photos) ? gym.photos.filter(Boolean) : [];
+    const coverPhoto = gym.coverPhoto || photos[0] || null;
+    return {
+      ...gym,
+      coverPhoto,
+      coverImage: coverPhoto,
+      photos,
+      images: photos.length > 0 ? photos : (coverPhoto ? [coverPhoto] : []),
+    };
   }
 
   private async assertNoActiveGymPass(userId: string, gymId?: string, excludeId?: string) {
@@ -135,6 +149,7 @@ class SubscriptionsService {
       .addSelect('s.status', 'status')
       .addSelect('s."amountPaid"', 'amountPaid')
       .addSelect('s."gymIds"', 'gymIds')
+      .addSelect('s."gymPlanId"', 'gymPlanId')
       .addSelect('s."razorpayOrderId"', 'razorpayOrderId')
       .addSelect('s."createdAt"', 'createdAt')
       .where('s."userId" = :userId', { userId })
@@ -147,21 +162,37 @@ class SubscriptionsService {
       ? await this.gymRepo.createQueryBuilder('g')
         .select('g.id', 'id')
         .addSelect('g.name', 'name')
+        .addSelect('g."coverPhoto"', 'coverPhoto')
+        .addSelect('g.photos', 'photos')
         .where('g.id IN (:...ids)', { ids: allGymIds })
         .getRawMany()
       : [];
-    const gymMap: Record<string, string> = Object.fromEntries(gyms.map((g: any) => [g.id, g.name]));
+    const gymMap: Record<string, any> = Object.fromEntries(gyms.map((g: any) => [g.id, this.normalizeGymSummary(g)]));
+    const gymPlanIds = [...new Set(subs.map((s: any) => s.gymPlanId).filter(Boolean))];
+    const gymPlans = gymPlanIds.length > 0
+      ? await this.gymPlanRepo.createQueryBuilder('gp')
+        .select('gp.id', 'id')
+        .addSelect('gp.name', 'name')
+        .addSelect('gp.price', 'price')
+        .addSelect('gp."durationDays"', 'durationDays')
+        .where('gp.id IN (:...ids)', { ids: gymPlanIds })
+        .getRawMany()
+      : [];
+    const gymPlanMap: Record<string, any> = Object.fromEntries(gymPlans.map((plan: any) => [plan.id, plan]));
     const PLAN_LABELS: Record<string, string> = { day_pass: '1-Day Pass', same_gym: 'Same Gym Pass', multi_gym: 'Multi Gym Pass' };
     return subs.map((sub: any) => {
       const primaryGymId = sub.gymIds?.[0] || null;
-      const gymName = primaryGymId ? (gymMap[primaryGymId] || null) : null;
+      const gym = primaryGymId ? (gymMap[primaryGymId] || null) : null;
+      const gymPlan = sub.gymPlanId ? (gymPlanMap[sub.gymPlanId] || null) : null;
+      const gymName = gym?.name || null;
       return {
         ...sub,
         primaryGymId,
         gymId: primaryGymId,
         gymName,
-        gym: primaryGymId ? { id: primaryGymId, name: gymName } : null,
-        planLabel: PLAN_LABELS[sub.planType] || sub.planType,
+        gym: primaryGymId ? { id: primaryGymId, name: gymName, coverPhoto: gym?.coverPhoto || null, coverImage: gym?.coverImage || null, photos: gym?.photos || [], images: gym?.images || [] } : null,
+        plan: gymPlan ? { id: gymPlan.id, name: gymPlan.name, price: gymPlan.price, durationDays: gymPlan.durationDays } : null,
+        planLabel: gymPlan?.name || PLAN_LABELS[sub.planType] || sub.planType,
       };
     });
   }
@@ -198,21 +229,20 @@ class SubscriptionsService {
       const gym = await this.gymRepo.createQueryBuilder('g')
         .select('g.id', 'id')
         .addSelect('g.name', 'name')
-        .addSelect('g."sameGymMonthlyPrice"', 'sameGymMonthlyPrice')
         .where('g.id = :id', { id: dto.gymId })
         .getRawOne();
       if (!gym) throw new BadRequestException('Gym not found');
       await this.assertNoActiveGymPass(userId, dto.gymId);
 
-      if (gymPlanId) {
-        const gymPlan = await this.gymPlanRepo.findOne({ where: { id: gymPlanId, gymId: dto.gymId, isActive: true } });
-        if (!gymPlan) throw new BadRequestException('Gym plan not found');
-
-        amount = Number(gymPlan.price);
-        durationMonths = Math.max(1, Math.round((gymPlan.durationDays || 30) / 30));
-      } else {
-        amount = Number(gym.sameGymMonthlyPrice || 599) * (durationMonths || 1);
+      if (!gymPlanId) {
+        throw new BadRequestException('Select an active gym subscription plan before checkout');
       }
+
+      const gymPlan = await this.gymPlanRepo.findOne({ where: { id: gymPlanId, gymId: dto.gymId, isActive: true } });
+      if (!gymPlan) throw new BadRequestException('Gym plan not found');
+
+      amount = Number(gymPlan.price);
+      durationMonths = Math.max(1, Math.round((gymPlan.durationDays || 30) / 30));
     } else if (dto.planType === 'multi_gym') {
       const price = config.multi_gym?.basePrice || 1499;
       amount = price * (durationMonths || 1);
@@ -371,7 +401,8 @@ class SubscriptionsService {
     const entries = await this.networkRepo.find({ where: { isActive: true } });
     const gymIds = entries.map(e => e.gymId);
     if (gymIds.length === 0) return [];
-    return this.gymRepo.findByIds(gymIds);
+    const gyms = await this.gymRepo.findByIds(gymIds);
+    return gyms.map((gym) => this.normalizeGymSummary(gym));
   }
 
   async addToNetwork(gymId: string) {

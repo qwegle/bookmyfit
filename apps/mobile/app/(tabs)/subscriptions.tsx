@@ -7,6 +7,7 @@ import { IconRefresh, IconDumbbell, IconCalendar, IconArrowRight } from '../../c
 import { subscriptionsApi } from '../../lib/api';
 import AuroraBackground from '../../components/AuroraBackground';
 import { isActiveSubscription } from '../../lib/subscriptionAccess';
+import { DEFAULT_GYM_IMAGE, firstImage } from '../../lib/imageFallbacks';
 
 const PLAN_COLOR: Record<string, string> = {
   day_pass: '#60A5FA',
@@ -186,8 +187,7 @@ export default function Subscriptions() {
               const gymIds: string[] = sub.gymIds || (sub.gymId ? [sub.gymId] : []);
               const firstGymId = gymIds[0] || sub.gym?.id || sub.gym?._id || sub.gymId || '';
 
-              const heroImg = sub.gym?.images?.[0] || sub.gym?.coverImage ||
-                'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=600&q=80';
+              const heroImg = firstImage(sub.gym?.images, sub.gym?.photos, sub.gym?.coverImage, sub.gym?.coverPhoto) || DEFAULT_GYM_IMAGE;
 
               const handleBookSlot = (e: any) => {
                 e.stopPropagation();
@@ -335,7 +335,7 @@ export default function Subscriptions() {
 }
 
 const s = StyleSheet.create({
-  container: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 132 },
+  container: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 36 },
   pageHeader: { marginBottom: 20, paddingHorizontal: 4 },
   pageTitle: { fontFamily: fonts.serif, fontSize: 28, color: '#fff', letterSpacing: -0.5 },
   pageSub: { fontFamily: fonts.sans, fontSize: 12, color: colors.t2, marginTop: 4 },

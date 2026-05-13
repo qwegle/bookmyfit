@@ -7,24 +7,8 @@ import { colors, fonts, radius } from '../theme/brand';
 import { IconArrowLeft, IconDownload, IconFileText, IconDollar } from '../components/Icons';
 import { subscriptionsApi } from '../lib/api';
 
-const FALLBACK_INVOICE = {
-  invoiceNumber: 'BMF-2025-00142',
-  invoiceDate: '2025-05-14',
-  customer: { name: '—', phone: '', email: '' },
-  gym: { name: 'PowerZone Fitness', city: 'Mumbai' },
-  items: [
-    { description: 'Elite Plan – 3 Months', quantity: 1, unitPrice: 3999, amount: 3999 },
-  ],
-  subtotal: 3999,
-  cgst: 360,
-  sgst: 360,
-  total: 4719,
-  paymentMethod: 'UPI / Cashfree',
-  status: 'paid',
-};
-
 function formatCurrency(amount: number) {
-  return `\u20B9${amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+  return `\u20B9${Number(amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 }
 
 function formatDate(dateStr: string) {
@@ -41,13 +25,16 @@ export default function InvoiceScreen() {
 
   useEffect(() => {
     if (!subscriptionId) {
-      setInvoice(FALLBACK_INVOICE);
+      setError('Missing subscription id.');
       setLoading(false);
       return;
     }
     subscriptionsApi.invoice(subscriptionId)
-      .then((data: any) => setInvoice(data?.invoice || data || FALLBACK_INVOICE))
-      .catch(() => setInvoice(FALLBACK_INVOICE))
+      .then((data: any) => setInvoice(data?.invoice || data || null))
+      .catch((e: any) => {
+        setInvoice(null);
+        setError(e?.message || 'Could not load invoice.');
+      })
       .finally(() => setLoading(false));
   }, [subscriptionId]);
 
@@ -55,7 +42,7 @@ export default function InvoiceScreen() {
     if (!invoice) return;
     try {
       await Share.share({
-        message: `BookMyFit Invoice #${invoice.invoiceNumber}\nDate: ${formatDate(invoice.invoiceDate)}\nTotal: ${formatCurrency(invoice.total)}\n\nThank you for choosing BookMyFit!`,
+        message: `BookMyFit Invoice #${invoice.invoiceNumber}\nDate: ${formatDate(invoice.invoiceDate)}\nTotal: ${formatCurrency(invoice.total)}`,
         title: `Invoice ${invoice.invoiceNumber}`,
       });
     } catch (e: any) {
@@ -65,139 +52,146 @@ export default function InvoiceScreen() {
 
   if (loading) {
     return (
-      <AuroraBackground><SafeAreaView style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={colors.accent} size="large" />
-      </SafeAreaView></AuroraBackground>
+      <AuroraBackground>
+        <SafeAreaView style={s.centered}>
+          <ActivityIndicator color={colors.accent} size="large" />
+        </SafeAreaView>
+      </AuroraBackground>
     );
   }
 
-  const inv = invoice || FALLBACK_INVOICE;
-  const items = inv.items || [];
-  const subtotal = inv.subtotal ?? items.reduce((sum: number, i: any) => sum + (i.amount || 0), 0);
-  const cgst = inv.cgst ?? Math.round(subtotal * 0.09);
-  const sgst = inv.sgst ?? Math.round(subtotal * 0.09);
-  const total = inv.total ?? subtotal + cgst + sgst;
+  if (!invoice) {
+    return (
+      <AuroraBackground>
+        <SafeAreaView style={[s.centered, { padding: 24 }]}>
+          <IconFileText size={44} color={colors.accent} />
+          <Text style={s.pageTitle}>Invoice unavailable</Text>
+          <Text style={s.emptyText}>{error || 'No invoice data was returned.'}</Text>
+          <TouchableOpacity style={[s.backBtn, { marginTop: 18 }]} onPress={() => router.back()}>
+            <IconArrowLeft size={18} color={colors.t} />
+          </TouchableOpacity>
+        </SafeAreaView>
+      </AuroraBackground>
+    );
+  }
+
+  const items = invoice.items || [];
+  const subtotal = invoice.subtotal ?? items.reduce((sum: number, item: any) => sum + Number(item.amount || 0), 0);
+  const cgst = invoice.cgst ?? Math.round(subtotal * 0.09);
+  const sgst = invoice.sgst ?? Math.round(subtotal * 0.09);
+  const total = invoice.total ?? subtotal + cgst + sgst;
 
   return (
     <AuroraBackground>
-    <SafeAreaView style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={s.container} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={s.header}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
-            <IconArrowLeft size={18} color={colors.t} />
+      <SafeAreaView style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={s.container} showsVerticalScrollIndicator={false}>
+          <View style={s.header}>
+            <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
+              <IconArrowLeft size={18} color={colors.t} />
+            </TouchableOpacity>
+            <Text style={s.pageTitle}>Invoice</Text>
+            <TouchableOpacity style={s.shareBtn} onPress={handleShare}>
+              <IconDownload size={16} color={colors.accent} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={s.invoiceCard}>
+            <View style={s.companyHeader}>
+              <View style={s.logoBox}>
+                <IconFileText size={22} color={colors.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.companyName}>BookMyFit Technologies Pvt Ltd</Text>
+                <Text style={s.companyAddress}>support@bookmyfit.in</Text>
+              </View>
+              <View style={[s.statusBadge, invoice.status === 'paid' && s.statusPaid]}>
+                <Text style={[s.statusText, invoice.status === 'paid' && s.statusTextPaid]}>
+                  {(invoice.status || 'paid').toUpperCase()}
+                </Text>
+              </View>
+            </View>
+
+            <View style={s.divider} />
+
+            <View style={s.metaRow}>
+              <View style={s.metaCol}>
+                <Text style={s.metaLabel}>Invoice No.</Text>
+                <Text style={s.metaValue}>{invoice.invoiceNumber || '-'}</Text>
+              </View>
+              <View style={s.metaCol}>
+                <Text style={s.metaLabel}>Date</Text>
+                <Text style={s.metaValue}>{formatDate(invoice.invoiceDate || '')}</Text>
+              </View>
+              <View style={s.metaCol}>
+                <Text style={s.metaLabel}>Payment</Text>
+                <Text style={s.metaValue}>{invoice.paymentMethod || 'Online'}</Text>
+              </View>
+            </View>
+
+            <View style={s.divider} />
+
+            <Text style={s.sectionLabel}>Bill To</Text>
+            <Text style={s.customerName}>{invoice.customer?.name || '-'}</Text>
+            {!!invoice.customer?.phone && <Text style={s.customerDetail}>{invoice.customer.phone}</Text>}
+            {!!invoice.customer?.email && <Text style={s.customerDetail}>{invoice.customer.email}</Text>}
+            {!!invoice.gym?.name && (
+              <Text style={s.customerDetail}>Gym: {invoice.gym.name}{invoice.gym?.city ? `, ${invoice.gym.city}` : ''}</Text>
+            )}
+
+            <View style={s.divider} />
+
+            <View style={s.tableHeader}>
+              <Text style={[s.tableHeaderText, { flex: 3 }]}>Description</Text>
+              <Text style={[s.tableHeaderText, { width: 36, textAlign: 'center' }]}>Qty</Text>
+              <Text style={[s.tableHeaderText, { width: 80, textAlign: 'right' }]}>Amount</Text>
+            </View>
+            {items.map((item: any, i: number) => (
+              <View key={i} style={s.tableRow}>
+                <Text style={[s.tableCell, { flex: 3 }]} numberOfLines={2}>{item.description || item.name || '-'}</Text>
+                <Text style={[s.tableCell, { width: 36, textAlign: 'center' }]}>{item.quantity || 1}</Text>
+                <Text style={[s.tableCell, { width: 80, textAlign: 'right' }]}>{formatCurrency(item.amount || 0)}</Text>
+              </View>
+            ))}
+
+            <View style={s.divider} />
+
+            <View style={s.totalRow}>
+              <Text style={s.totalLabel}>Subtotal</Text>
+              <Text style={s.totalValue}>{formatCurrency(subtotal)}</Text>
+            </View>
+            <View style={s.totalRow}>
+              <Text style={s.totalLabel}>CGST (9%)</Text>
+              <Text style={s.totalValue}>{formatCurrency(cgst)}</Text>
+            </View>
+            <View style={s.totalRow}>
+              <Text style={s.totalLabel}>SGST (9%)</Text>
+              <Text style={s.totalValue}>{formatCurrency(sgst)}</Text>
+            </View>
+
+            <View style={s.divider} />
+
+            <View style={s.totalRow}>
+              <Text style={s.grandTotalLabel}>Total</Text>
+              <View style={s.grandTotalValueWrap}>
+                <IconDollar size={13} color={colors.accent} />
+                <Text style={s.grandTotalValue}>{formatCurrency(total)}</Text>
+              </View>
+            </View>
+          </View>
+
+          <TouchableOpacity style={s.shareFullBtn} onPress={handleShare}>
+            <IconDownload size={16} color="#000" />
+            <Text style={s.shareFullBtnText}>Share Invoice</Text>
           </TouchableOpacity>
-          <Text style={s.pageTitle}>Invoice</Text>
-          <TouchableOpacity style={s.shareBtn} onPress={handleShare}>
-            <IconDownload size={16} color={colors.accent} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Invoice card */}
-        <View style={s.invoiceCard}>
-          {/* Company header */}
-          <View style={s.companyHeader}>
-            <View style={s.logoBox}>
-              <IconFileText size={22} color={colors.accent} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.companyName}>BookMyFit Technologies Pvt Ltd</Text>
-              <Text style={s.companyAddress}>Mumbai, Maharashtra – 400001</Text>
-              <Text style={s.companyAddress}>support@bookmyfit.in</Text>
-            </View>
-            <View style={[s.statusBadge, inv.status === 'paid' && s.statusPaid]}>
-              <Text style={[s.statusText, inv.status === 'paid' && s.statusTextPaid]}>
-                {(inv.status || 'PAID').toUpperCase()}
-              </Text>
-            </View>
-          </View>
-
-          <View style={s.divider} />
-
-          {/* Invoice meta */}
-          <View style={s.metaRow}>
-            <View style={s.metaCol}>
-              <Text style={s.metaLabel}>Invoice No.</Text>
-              <Text style={s.metaValue}>{inv.invoiceNumber || '—'}</Text>
-            </View>
-            <View style={s.metaCol}>
-              <Text style={s.metaLabel}>Date</Text>
-              <Text style={s.metaValue}>{formatDate(inv.invoiceDate || '')}</Text>
-            </View>
-            <View style={s.metaCol}>
-              <Text style={s.metaLabel}>Payment</Text>
-              <Text style={s.metaValue}>{inv.paymentMethod || 'Online'}</Text>
-            </View>
-          </View>
-
-          <View style={s.divider} />
-
-          {/* Customer details */}
-          <Text style={s.sectionLabel}>Bill To</Text>
-          <Text style={s.customerName}>{inv.customer?.name || '—'}</Text>
-          {!!inv.customer?.phone && <Text style={s.customerDetail}>{inv.customer.phone}</Text>}
-          {!!inv.customer?.email && <Text style={s.customerDetail}>{inv.customer.email}</Text>}
-          {!!inv.gym?.name && (
-            <Text style={s.customerDetail}>Gym: {inv.gym.name}{inv.gym?.city ? `, ${inv.gym.city}` : ''}</Text>
-          )}
-
-          <View style={s.divider} />
-
-          {/* Line items */}
-          <View style={s.tableHeader}>
-            <Text style={[s.tableHeaderText, { flex: 3 }]}>Description</Text>
-            <Text style={[s.tableHeaderText, { width: 36, textAlign: 'center' }]}>Qty</Text>
-            <Text style={[s.tableHeaderText, { width: 80, textAlign: 'right' }]}>Amount</Text>
-          </View>
-          {items.map((item: any, i: number) => (
-            <View key={i} style={s.tableRow}>
-              <Text style={[s.tableCell, { flex: 3 }]} numberOfLines={2}>{item.description || item.name || '—'}</Text>
-              <Text style={[s.tableCell, { width: 36, textAlign: 'center' }]}>{item.quantity || 1}</Text>
-              <Text style={[s.tableCell, { width: 80, textAlign: 'right' }]}>{formatCurrency(item.amount || 0)}</Text>
-            </View>
-          ))}
-
-          <View style={s.divider} />
-
-          {/* Totals */}
-          <View style={s.totalRow}>
-            <Text style={s.totalLabel}>Subtotal</Text>
-            <Text style={s.totalValue}>{formatCurrency(subtotal)}</Text>
-          </View>
-          <View style={s.totalRow}>
-            <Text style={s.totalLabel}>CGST (9%)</Text>
-            <Text style={s.totalValue}>{formatCurrency(cgst)}</Text>
-          </View>
-          <View style={s.totalRow}>
-            <Text style={s.totalLabel}>SGST (9%)</Text>
-            <Text style={s.totalValue}>{formatCurrency(sgst)}</Text>
-          </View>
-
-          <View style={s.divider} />
-
-          <View style={s.totalRow}>
-            <Text style={s.grandTotalLabel}>Total</Text>
-            <View style={s.grandTotalValueWrap}>
-              <IconDollar size={13} color={colors.accent} />
-              <Text style={s.grandTotalValue}>{formatCurrency(total)}</Text>
-            </View>
-          </View>
-
-          <View style={s.divider} />
-        </View>
-
-        {/* Share button */}
-        <TouchableOpacity style={s.shareFullBtn} onPress={handleShare}>
-          <IconDownload size={16} color="#000" />
-          <Text style={s.shareFullBtnText}>Share Invoice</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </SafeAreaView>
+        </ScrollView>
+      </SafeAreaView>
     </AuroraBackground>
   );
 }
 
 const s = StyleSheet.create({
+  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  emptyText: { fontFamily: fonts.sans, color: colors.t2, textAlign: 'center', marginTop: 8 },
   container: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 40 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 24 },
   backBtn: {
@@ -248,11 +242,6 @@ const s = StyleSheet.create({
   grandTotalLabel: { fontFamily: fonts.sansBold, fontSize: 16, color: '#fff' },
   grandTotalValueWrap: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   grandTotalValue: { fontFamily: fonts.sansBold, fontSize: 18, color: colors.accent },
-  noteBox: {
-    backgroundColor: 'rgba(255,205,55,0.06)', borderWidth: 1, borderColor: 'rgba(255,205,55,0.15)',
-    borderRadius: radius.md, padding: 12,
-  },
-  noteText: { fontFamily: fonts.sans, fontSize: 10, color: 'rgba(255,205,55,0.7)', lineHeight: 16 },
   shareFullBtn: {
     height: 52, borderRadius: radius.lg,
     backgroundColor: colors.accent, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,

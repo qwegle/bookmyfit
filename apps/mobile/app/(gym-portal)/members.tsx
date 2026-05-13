@@ -27,14 +27,6 @@ type Member = {
 
 type FilterType = 'all' | 'active' | 'expired';
 
-const MOCK_MEMBERS: Member[] = [
-  { id: '1', name: 'Rahul Sharma', phone: '98765xxxxx', planName: 'Elite', planTier: 'elite', status: 'active', lastVisit: '2 hours ago' },
-  { id: '2', name: 'Priya Mehta', phone: '87654xxxxx', planName: 'Premium', planTier: 'premium', status: 'active', lastVisit: '1 day ago' },
-  { id: '3', name: 'Amit Verma', phone: '76543xxxxx', planName: 'Standard', planTier: 'standard', status: 'expired', lastVisit: '12 days ago' },
-  { id: '4', name: 'Sneha Patel', phone: '65432xxxxx', planName: 'Elite', planTier: 'elite', status: 'active', lastVisit: '3 hours ago' },
-  { id: '5', name: 'Kiran Joshi', phone: '54321xxxxx', planName: 'Standard', planTier: 'standard', status: 'expired', lastVisit: '20 days ago' },
-];
-
 const TIER_COLORS: Record<string, string> = {
   elite: colors.tierElite,
   premium: colors.tierPremium,
@@ -75,8 +67,9 @@ export default function MembersScreen() {
   const fetchMembers = useCallback(async () => {
     try {
       setError(null);
-      const data = await gymStaffApi.myMembers().catch(() => null);
-      const list: Member[] = (data?.members ?? data ?? MOCK_MEMBERS).map((m: any) => ({
+      const data = await gymStaffApi.myMembers();
+      const raw = Array.isArray(data) ? data : data?.members ?? data?.data ?? [];
+      const list: Member[] = raw.map((m: any) => ({
         id: m.id ?? m._id ?? String(Math.random()),
         name: m.name ?? m.memberName,
         phone: m.phone ?? m.memberPhone,
@@ -88,9 +81,9 @@ export default function MembersScreen() {
       setMembers(list);
       applyFilters(list, search, filter);
     } catch {
-      setError('Could not load members. Showing sample data.');
-      setMembers(MOCK_MEMBERS);
-      applyFilters(MOCK_MEMBERS, search, filter);
+      setError('Could not load members from the API.');
+      setMembers([]);
+      applyFilters([], search, filter);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -267,7 +260,7 @@ const s = StyleSheet.create({
   },
   errorText: { fontFamily: fonts.sans, fontSize: 12, color: colors.error },
 
-  listContent: { paddingHorizontal: spacing.xl, paddingBottom: 132 },
+  listContent: { paddingHorizontal: spacing.xl, paddingBottom: 36 },
   emptyContainer: { flex: 1 },
   emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: spacing.sm },
   emptyTitle: { fontFamily: fonts.sansBold, fontSize: 16, color: colors.t },

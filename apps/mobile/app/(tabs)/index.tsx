@@ -1,6 +1,6 @@
 import {
   ScrollView, View, Text, TouchableOpacity, StyleSheet,
-  ImageBackground, FlatList, Dimensions, Modal, Pressable,
+  ImageBackground, FlatList, Dimensions, Modal, Pressable, useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -12,11 +12,17 @@ import {
 } from '../../components/Icons';
 import { API_BASE, appStorage, subscriptionsApi } from '../../lib/api';
 import { accessLabelForSubscription, getActiveSubscriptionAccess, normalizeSubscriptionList } from '../../lib/subscriptionAccess';
+import {
+  DEFAULT_GYM_IMAGE,
+  DEFAULT_HOMEPAGE_HERO_IMAGE,
+  DEFAULT_WELLNESS_SERVICE_IMAGE,
+  firstImage,
+  productImage,
+} from '../../lib/imageFallbacks';
 import Svg, { Path, Circle, Text as SvgText } from 'react-native-svg';
 import * as Location from 'expo-location';
 
 const { width: W } = Dimensions.get('window');
-const CARD_W = W;
 
 // ── Category icons ───────────────────────────────────────────────────────────
 const CATEGORIES = [
@@ -51,54 +57,6 @@ function categoryMeta(category: any) {
   return { icon: category.icon || 'dumbbell', color: category.color || colors.accent, bg: category.bg || colors.accentSoft };
 }
 
-// ── Fallback config (mirrors server defaults) ────────────────────────────────
-const FALLBACK_CONFIG = {
-  sections: [
-    {
-      id: 'hero', type: 'hero', title: 'Hero Banner', visible: true, order: 0,
-      slides: [
-        { imageUrl: 'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?w=900&q=80', headline: 'Make Every Rep', headlineAccent: 'Count!', sub: 'Find the best gyms near you\nand book your pass instantly.', cta: 'Explore Gyms', ctaRoute: '/gyms' },
-        { imageUrl: 'https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=900&q=80', headline: 'Find Your Perfect', headlineAccent: 'Gym Today!', sub: 'Partner gyms across the city,\none subscription covers all.', cta: 'Browse Gyms', ctaRoute: '/gyms' },
-        { imageUrl: 'https://images.unsplash.com/photo-1605296867304-46d5465a13f1?w=900&q=80', headline: 'No Long', headlineAccent: 'Contracts!', sub: 'Flexible passes — daily, weekly\nor monthly. Your choice.', cta: 'View Plans', ctaRoute: '/plans' },
-      ],
-    },
-    { id: 'categories', type: 'categories', title: 'Browse by Category', visible: true, order: 1 },
-    {
-      id: 'featured_gyms', type: 'featured_gyms', title: 'Featured Gyms', visible: true, order: 2,
-      gyms: [
-        { id: 'c5b25fd2-c918-4bf4-a7c5-35170f0155b1', name: "Gold's Gym Bhubaneswar",      city: 'Bhubaneswar', rating: 4.7, images: ['https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=600&q=80'], dayPassPrice: 199 },
-        { id: '554d5de4-38c0-4b87-a2f4-51e0124e859f', name: 'Anytime Fitness Bhubaneswar', city: 'Bhubaneswar', rating: 4.5, images: ['https://images.unsplash.com/photo-1532384661954-a0e26f4f065c?w=600&q=80'], dayPassPrice: 149 },
-        { id: 'bf67d2fc-4b70-43e3-93c4-da533e5caa09', name: 'Cult.fit Bhubaneswar',        city: 'Bhubaneswar', rating: 4.8, images: ['https://images.unsplash.com/photo-1549476464-37392f717541?w=600&q=80'], dayPassPrice: 99  },
-        { id: '547b28de-54cf-4f3a-a036-c1f9294066e6', name: 'CrossFit Bhubaneswar',        city: 'Bhubaneswar', rating: 4.6, images: ['https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=600&q=80'], dayPassPrice: 199 },
-      ],
-    },
-    {
-      id: 'products', type: 'products', title: 'Shop Products', visible: true, order: 3,
-      products: [
-        { id: 'p1', name: 'Whey Protein 2kg', price: 2499, mrp: 3299, images: ['https://images.unsplash.com/photo-1593095948071-474c5cc2989d?w=300&q=80'], category: 'supplements' },
-        { id: 'p2', name: 'Resistance Bands Set', price: 699,  mrp: 999,  images: ['https://images.unsplash.com/photo-1598300042247-d088f8ab3a91?w=300&q=80'], category: 'accessories' },
-        { id: 'p3', name: 'Gym Gloves Pro',    price: 499,  mrp: 799,  images: ['https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=300&q=80'], category: 'accessories' },
-        { id: 'p4', name: 'BCAA Energy 300g',  price: 1299, mrp: 1799, images: ['https://images.unsplash.com/photo-1579722820308-d74e571900a9?w=300&q=80'], category: 'supplements' },
-        { id: 'p5', name: 'DryFit Tee',        price: 799,  mrp: 1299, images: ['https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=300&q=80'], category: 'apparel' },
-      ],
-    },
-    { id: 'trust', type: 'trust', title: 'Why BookMyFit?', visible: true, order: 4 },
-    { id: 'testimonials', type: 'testimonials', title: 'What Members Say', visible: true, order: 5 },
-  ],
-};
-
-const TESTIMONIALS = [
-  { id: '1', name: 'Priya S.', city: 'Bhubaneswar', rating: 5, avatar: 'P', text: 'Best way to stay fit in the city. Multi Gym pass lets me try a new gym every week!' },
-  { id: '2', name: 'Rahul M.', city: 'Bhubaneswar', rating: 5, avatar: 'R', text: 'Day passes are perfect. No commitment, just book and walk in!' },
-  { id: '3', name: 'Ananya K.', city: 'Cuttack',      rating: 5, avatar: 'A', text: 'QR check-in is seamless. Love the Same Gym pass for my daily workouts.' },
-];
-
-const FALLBACK_WELLNESS_SERVICES = [
-  { id: 'wl-yoga', name: 'Recovery Yoga', category: 'Yoga', durationMin: 60, price: 699, imageUrl: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=500&q=80' },
-  { id: 'wl-physio', name: 'Sports Physiotherapy', category: 'Physio', durationMin: 45, price: 999, imageUrl: 'https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?w=500&q=80' },
-  { id: 'wl-diet', name: 'Nutrition Consult', category: 'Nutrition', durationMin: 30, price: 499, imageUrl: 'https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=500&q=80' },
-  { id: 'wl-massage', name: 'Deep Tissue Recovery', category: 'Recovery', durationMin: 50, price: 1199, imageUrl: 'https://images.unsplash.com/photo-1519823551278-64ac92734fb1?w=500&q=80' },
-];
 
 // ── Skeleton ─────────────────────────────────────────────────────────────────
 function Sk({ h, w, br = 12, style }: { h: number; w?: number | string; br?: number; style?: any }) {
@@ -115,6 +73,7 @@ export default function Home() {
   const [showCityPicker, setShowCityPicker] = useState(false);
   const [heroIdx, setHeroIdx] = useState(0);
   const [wellnessServices, setWellnessServices] = useState<any[]>([]);
+  const [homeGyms, setHomeGyms] = useState<any[]>([]);
   const [subscribedGymIds, setSubscribedGymIds] = useState<Set<string>>(new Set());
   const [activeGymSubs, setActiveGymSubs] = useState<Map<string, any>>(new Map());
   const [multiGymSub, setMultiGymSub] = useState<any>(null);
@@ -145,8 +104,8 @@ export default function Home() {
   useEffect(() => {
     fetch(`${API_BASE}/api/v1/homepage/config`)
       .then((r) => r.json())
-      .then((data: any) => setConfig(data?.sections ? data : FALLBACK_CONFIG))
-      .catch(() => setConfig(FALLBACK_CONFIG))
+      .then((data: any) => setConfig(data?.sections ? data : { sections: [] }))
+      .catch(() => setConfig({ sections: [] }))
       .finally(() => setLoading(false));
   }, []);
 
@@ -155,6 +114,16 @@ export default function Home() {
       .then((r) => r.json())
       .then((data: any) => setWellnessServices(Array.isArray(data) ? data.slice(0, 8) : []))
       .catch(() => setWellnessServices([]));
+  }, []);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/v1/gyms?limit=6`)
+      .then((r) => r.json())
+      .then((data: any) => {
+        const list = Array.isArray(data) ? data : data?.data || data?.gyms || [];
+        setHomeGyms(Array.isArray(list) ? list.slice(0, 6) : []);
+      })
+      .catch(() => setHomeGyms([]));
   }, []);
 
   useEffect(() => {
@@ -179,8 +148,11 @@ export default function Home() {
     : [];
 
   const heroSection = sections.find((s) => s.type === 'hero');
-  const slides = heroSection?.slides || FALLBACK_CONFIG.sections[0].slides;
-  const featuredGymSection = sections.find((s) => s.type === 'featured_gyms') || FALLBACK_CONFIG.sections[2];
+  const slides = heroSection?.slides || [];
+  const featuredGymSection = sections.find((s) => s.type === 'featured_gyms');
+  const bottomGymSection = homeGyms.length
+    ? { id: 'nearby-gyms', title: 'Gyms Near You', gyms: homeGyms }
+    : featuredGymSection;
 
   // Auto-advance hero
   useEffect(() => {
@@ -276,22 +248,22 @@ export default function Home() {
             );
             case 'products':   return <ProductsSection key={section.id} section={section} />;
             case 'trust':      return null;
-            case 'testimonials': return (
-              <View key={section.id}>
-                <GymListingSection
-                  section={featuredGymSection}
-                  subscribedGymIds={subscribedGymIds}
-                  activeGymSubs={activeGymSubs}
-                  multiGymSub={multiGymSub}
-                  hasMultiGymSub={hasMultiGymSub}
-                />
-              </View>
-            );
+            case 'testimonials': return null;
             default: return null;
           }
         })}
 
-        <View style={{ height: 32 }} />
+        {bottomGymSection ? (
+          <GymListingSection
+            section={bottomGymSection}
+            subscribedGymIds={subscribedGymIds}
+            activeGymSubs={activeGymSubs}
+            multiGymSub={multiGymSub}
+            hasMultiGymSub={hasMultiGymSub}
+          />
+        ) : null}
+
+        <View style={{ height: 8 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -307,19 +279,32 @@ function hour() {
 // ── Section components ────────────────────────────────────────────────────────
 
 function HeroSection({ slides, heroIdx, setHeroIdx, heroRef }: any) {
+  const { width } = useWindowDimensions();
+  const cardW = Math.max(1, Math.round(width || W));
+  const maxIndex = Math.max(0, slides.length - 1);
+  if (!slides?.length) return null;
+
   return (
     <View style={s.heroWrap}>
       <FlatList
+        key={`hero-${cardW}`}
         ref={heroRef}
         data={slides}
         horizontal pagingEnabled
         showsHorizontalScrollIndicator={false}
         keyExtractor={(_: any, i: number) => String(i)}
-        onMomentumScrollEnd={(e: any) => setHeroIdx(Math.round(e.nativeEvent.contentOffset.x / CARD_W))}
-        snapToInterval={CARD_W}
+        onMomentumScrollEnd={(e: any) => {
+          const idx = Math.round(e.nativeEvent.contentOffset.x / cardW);
+          setHeroIdx(Math.min(maxIndex, Math.max(0, idx)));
+        }}
+        snapToInterval={cardW}
+        getItemLayout={(_: any, index: number) => ({ length: cardW, offset: cardW * index, index })}
+        onScrollToIndexFailed={(info: any) => {
+          setTimeout(() => heroRef.current?.scrollToOffset({ offset: cardW * info.index, animated: true }), 80);
+        }}
         decelerationRate="fast"
         renderItem={({ item }: any) => (
-          <ImageBackground source={{ uri: item.imageUrl }} style={s.heroSlide}>
+          <ImageBackground source={{ uri: firstImage(item.imageUrl) || DEFAULT_HOMEPAGE_HERO_IMAGE }} style={[s.heroSlide, { width: cardW }]}>
             <View style={s.heroDark} />
             <View style={s.heroContent}>
               <Text style={s.heroKicker}>BOOKMY<Text style={{ color: colors.accent }}>FIT</Text></Text>
@@ -367,13 +352,14 @@ function CategoriesSection({ title }: { title: string }) {
 }
 
 function WellnessServicesSection({ services }: { services: any[] }) {
-  const list = services.length ? services : FALLBACK_WELLNESS_SERVICES;
+  const list = services;
+  if (!list.length) return null;
   return (
     <View style={{ marginBottom: 24 }}>
       <SectionRow title="Wellness Services" onViewAll={() => router.push('/wellness' as any)} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} decelerationRate="fast" contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}>
         {list.map((svc: any) => {
-          const img = svc.imageUrl || svc.image || svc.images?.[0] || svc.partner?.coverPhoto || 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=500&q=80';
+          const img = firstImage(svc.imageUrl, svc.image, svc.images, svc.partner?.photos, svc.partner?.coverPhoto) || DEFAULT_WELLNESS_SERVICE_IMAGE;
           const category = svc.category || svc.partner?.serviceType || 'Wellness';
           const price = Number(svc.price || svc.minPrice || 0);
           return (
@@ -385,7 +371,7 @@ function WellnessServicesSection({ services }: { services: any[] }) {
                 </View>
                 <View style={s.wellnessBottom}>
                   <Text style={s.wellnessName} numberOfLines={2}>{svc.name || svc.title || 'Wellness Service'}</Text>
-                  <Text style={s.wellnessMeta}>{svc.durationMin || svc.duration || 45} min</Text>
+                  <Text style={s.wellnessMeta}>{svc.durationMinutes || svc.durationMin || svc.duration || 45} min</Text>
                   {price > 0 && <Text style={s.wellnessPrice}>From Rs {price.toLocaleString('en-IN')}</Text>}
                 </View>
               </ImageBackground>
@@ -418,7 +404,7 @@ function GymListingSection({
       <SectionRow title="Gyms Near You" onViewAll={() => router.push('/gyms' as any)} />
       <View style={s.gymListWrap}>
         {gyms.map((g: any, idx: number) => {
-          const img = g.images?.[0] || g.coverImage || g.img || 'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?w=600&q=80';
+          const img = firstImage(g.images, g.photos, g.coverImage, g.coverPhoto, g.img) || DEFAULT_GYM_IMAGE;
           const gid = g.id || g._id || `nearby-gym-${idx}`;
           const city = [g.area, g.city].filter(Boolean).join(', ');
           const hasAccess = hasMultiGymSub || subscribedGymIds.has(String(gid));
@@ -506,7 +492,7 @@ function FeaturedGymsSection({
       <SectionRow title={section.title || 'Featured Gyms'} onViewAll={() => router.push('/gyms' as any)} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}>
         {gyms.map((g: any, idx: number) => {
-          const img = g.images?.[0] || g.coverImage || g.img || 'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?w=600&q=80';
+          const img = firstImage(g.images, g.photos, g.coverImage, g.coverPhoto, g.img) || DEFAULT_GYM_IMAGE;
           const name = (g.name || 'Gym').split(' ').slice(0, 2).join(' ');
           const gid = g.id || g._id;
           const hasAccess = hasMultiGymSub || subscribedGymIds.has(String(gid));
@@ -558,7 +544,7 @@ function ProductsSection({ section }: { section: any }) {
       <SectionRow title={section.title || 'Shop Products'} onViewAll={() => router.push('/(tabs)/store' as any)} />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}>
         {products.map((p: any) => {
-          const img = p.images?.[0] || p.image || 'https://images.unsplash.com/photo-1593095948071-474c5cc2989d?w=300&q=80';
+          const img = productImage(p);
           const hasDiscount = p.mrp && Number(p.mrp) > Number(p.price);
           return (
             <TouchableOpacity key={p.id} style={s.productCard} onPress={() => router.push(`/product/${p.id}` as any)} activeOpacity={0.88}>
@@ -609,36 +595,6 @@ function TrustSection() {
   );
 }
 
-function TestimonialsSection() {
-  return (
-    <View style={{ marginBottom: 24 }}>
-      <SectionRow title="What Members Say" />
-      <FlatList
-        data={TESTIMONIALS}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}
-        keyExtractor={(t) => t.id}
-        renderItem={({ item: t }) => (
-          <View style={s.testimonialCard}>
-            <Text style={s.testimonialText}>"{t.text}"</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 }}>
-              <View style={s.avatarCircle}><Text style={s.avatarText}>{t.avatar}</Text></View>
-              <View>
-                <Text style={s.authorName}>{t.name}</Text>
-                <Text style={s.authorCity}>{t.city}</Text>
-              </View>
-              <View style={{ marginLeft: 'auto', flexDirection: 'row', gap: 2 }}>
-                {Array.from({ length: t.rating }).map((_, i) => <IconStar key={i} size={10} color="#FBBF24" />)}
-              </View>
-            </View>
-          </View>
-        )}
-      />
-    </View>
-  );
-}
-
 function SectionRow({ title, onViewAll }: { title: string; onViewAll?: () => void }) {
   return (
     <View style={s.sectionRow}>
@@ -676,7 +632,7 @@ function RankNumber({ value }: { value: number }) {
 const s = StyleSheet.create({
   root:   { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
-  container: { paddingBottom: 132 },
+  container: { paddingBottom: 36 },
 
   // Top bar
   topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 },
@@ -691,7 +647,7 @@ const s = StyleSheet.create({
 
   // Hero
   heroWrap: { marginHorizontal: 0, marginBottom: 24 },
-  heroSlide: { width: CARD_W, height: 200, justifyContent: 'flex-end' },
+  heroSlide: { height: 200, justifyContent: 'flex-end' },
   heroDark: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.52)' },
   heroContent: { padding: 18, gap: 2 },
   heroKicker: { fontFamily: fonts.sansBold, fontSize: 9, color: 'rgba(255,255,255,0.5)', letterSpacing: 2, marginBottom: 4 },

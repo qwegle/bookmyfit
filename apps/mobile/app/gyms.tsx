@@ -10,6 +10,7 @@ import { colors, fonts, radius } from '../theme/brand';
 import { IconArrowLeft, IconStar, IconPin, IconFilter, IconCheck, IconSearch } from '../components/Icons';
 import { gymsApi, subscriptionsApi } from '../lib/api';
 import { accessLabelForSubscription, getActiveSubscriptionAccess, normalizeSubscriptionList } from '../lib/subscriptionAccess';
+import { DEFAULT_GYM_IMAGE, firstImage } from '../lib/imageFallbacks';
 
 const { width: W } = Dimensions.get('window');
 
@@ -32,15 +33,6 @@ const SORTS = [
   { id: 'price_desc',label: 'Price: High → Low' },
 ];
 
-const FALLBACK_GYMS = [
-  { id: 'c5b25fd2-c918-4bf4-a7c5-35170f0155b1', name: "Gold's Gym Bhubaneswar",       rating: 4.7, distance: '1.2 km', city: 'Bhubaneswar', amenities: ['Strength', 'Cardio'],  categories: ['Strength', 'Cardio', 'CrossFit'],  images: ['https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=600&q=80'], dayPassPrice: 199, discount: null },
-  { id: '554d5de4-38c0-4b87-a2f4-51e0124e859f', name: 'Anytime Fitness Bhubaneswar',  rating: 4.5, distance: '2.1 km', city: 'Bhubaneswar', amenities: ['CrossFit', 'HIIT'],    categories: ['CrossFit', 'HIIT', 'Strength'],    images: ['https://images.unsplash.com/photo-1532384661954-a0e26f4f065c?w=600&q=80'], dayPassPrice: 149, discount: null },
-  { id: 'bf67d2fc-4b70-43e3-93c4-da533e5caa09', name: 'Cult.fit Bhubaneswar',         rating: 4.8, distance: '3.4 km', city: 'Bhubaneswar', amenities: ['Yoga', 'Strength'],    categories: ['Yoga', 'Strength', 'Cardio'],      images: ['https://images.unsplash.com/photo-1549476464-37392f717541?w=600&q=80'], dayPassPrice: 99,  discount: '20% OFF' },
-  { id: '547b28de-54cf-4f3a-a036-c1f9294066e6', name: 'CrossFit Bhubaneswar',         rating: 4.6, distance: '2.8 km', city: 'Bhubaneswar', amenities: ['Strength', 'Cardio'],  categories: ['CrossFit', 'HIIT', 'Strength'],    images: ['https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=600&q=80'], dayPassPrice: 199, discount: null },
-  { id: '28ec2ef5-a659-41f3-aef2-0a0be52f4f16', name: 'Iron House Gym',               rating: 4.4, distance: '1.8 km', city: 'Bhubaneswar', amenities: ['HIIT', 'Cardio'],      categories: ['Strength', 'Cardio'],              images: ['https://images.unsplash.com/photo-1605296867304-46d5465a13f1?w=600&q=80'], dayPassPrice: 129, discount: '10% OFF' },
-  { id: '9275177c-765d-4ad8-ac13-6cda17ba4edc', name: 'Fitness First Bhubaneswar',    rating: 4.5, distance: '4.0 km', city: 'Bhubaneswar', amenities: ['Yoga', 'Pilates'],     categories: ['Yoga', 'Cardio', 'Strength'],      images: ['https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=600&q=80'], dayPassPrice: 199, discount: null },
-];
-
 function Sk({ h, br = 12, style }: { h: number; br?: number; style?: any }) {
   return <View style={[{ height: h, borderRadius: br, backgroundColor: 'rgba(255,255,255,0.06)' }, style]} />;
 }
@@ -61,6 +53,7 @@ export default function GymListingPage() {
   const [activeGymSubs, setActiveGymSubs] = useState<Map<string, any>>(new Map());
   const [multiGymSub, setMultiGymSub] = useState<any>(null);
   const [hasMultiGymSub, setHasMultiGymSub] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const pageRef = useRef(1);
 
   const filterByCat = (list: any[], cat: string) => {
@@ -77,18 +70,17 @@ export default function GymListingPage() {
     else if (pg > 1) setLoadingMore(true);
     else setLoadingMore(true); // category switch: spinner, keep existing list
     try {
+      setLoadError('');
       const params: any = { page: pg, limit: 50 }; // fetch more so local filter has data
       const res: any = await gymsApi.list(params);
       const raw = Array.isArray(res) ? res : res?.gyms || res?.data || [];
       const list = filterByCat(raw, cat);
-      const fallback = filterByCat(FALLBACK_GYMS, cat);
-      if (raw.length === 0 && pg === 1) { setGyms(fallback); setHasMore(false); return; }
-      if (list.length === 0 && pg === 1) { setGyms(fallback); setHasMore(false); return; }
       if (pg === 1) setGyms(list); else setGyms((prev) => [...prev, ...list]);
       setHasMore(raw.length >= 50);
       pageRef.current = pg;
-    } catch {
-      if (pg === 1) setGyms(filterByCat(FALLBACK_GYMS, cat));
+    } catch (e: any) {
+      if (pg === 1) setGyms([]);
+      setLoadError(e?.message || 'Unable to load gyms right now.');
       setHasMore(false);
     } finally {
       setLoading(false);
@@ -239,7 +231,7 @@ export default function GymListingPage() {
             onEndReachedThreshold={0.4}
             ListEmptyComponent={
               <View style={s.empty}>
-                <Text style={s.emptyText}>No gyms found in this category.</Text>
+                <Text style={s.emptyText}>{loadError || 'No gyms found in this category.'}</Text>
               </View>
             }
             renderItem={({ item: g }) => {
@@ -297,7 +289,7 @@ function GymCard({
   const rating   = Number(gym.rating || gym.avgRating || 0).toFixed(1);
   const distance = gym.distance || (gym.distanceKm ? `${gym.distanceKm} km` : '');
   const city     = gym.city || gym.location?.city || '';
-  const img      = gym.images?.[0] || gym.coverImage || gym.img || 'https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?w=400&q=80';
+  const img      = firstImage(gym.images, gym.photos, gym.coverImage, gym.coverPhoto, gym.img) || DEFAULT_GYM_IMAGE;
   const price    = gym.dayPassPrice || gym.day_pass_price || '—';
   const discount = gym.discount || null;
   const tags: string[] = (gym.amenities || gym.tags || []).slice(0, 3);
@@ -401,7 +393,7 @@ const s = StyleSheet.create({
   chipScroller:  { flexGrow: 0, maxHeight: 42, marginBottom: 0 },
   chipList:      { paddingHorizontal: 16, paddingTop: 0, paddingBottom: 4, gap: 8 },
   skeletonList:  { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 16, gap: 12 },
-  listContent:   { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 128, gap: 12 },
+  listContent:   { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 40, gap: 12 },
   chip:          {
     height: 34, paddingHorizontal: 14, borderRadius: radius.pill,
     backgroundColor: 'rgba(255,255,255,0.055)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)',

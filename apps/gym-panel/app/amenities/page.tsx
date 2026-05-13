@@ -1,11 +1,16 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Shell from '../../components/Shell';
 import { Check, Plus, Clock, AlertTriangle } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 
-interface Amenity { _id: string; name: string; }
+interface Amenity { id?: string; _id?: string; name: string; status?: string; }
+
+function toAmenityArray(data: any): Amenity[] {
+  if (Array.isArray(data)) return data;
+  return Array.isArray(data?.data) ? data.data : [];
+}
 
 function SkeletonPill() {
   return <div style={{ height: 36, width: 90, borderRadius: 20, background: 'rgba(255,255,255,0.07)', animation: 'pulse 1.5s ease-in-out infinite' }} />;
@@ -23,28 +28,29 @@ export default function AmenitiesPage() {
   const [pendingRequests, setPendingRequests] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true); setError(null);
-      try {
-        const [gymData, masterData] = await Promise.all([
-          api.get<any>('/gyms/my-gym'),
-          api.get<Amenity[]>('/master/amenities'),
-        ]);
-        setGymId(gymData._id || gymData.id || '');
-        const amenNames: string[] = (gymData.amenities || []).map((a: any) =>
-          typeof a === 'string' ? a : (a.name || '')
-        );
-        setGymAmenities(amenNames);
-        setAllAmenities(Array.isArray(masterData) ? masterData : []);
-      } catch {
-        setError('Failed to load amenities. Please refresh.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+  const loadAmenities = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const [gymData, masterData, requestData] = await Promise.all([
+        api.get<any>('/gyms/my-gym'),
+        api.get<Amenity[]>('/master/amenities'),
+        api.get<Amenity[]>('/master/amenities/my-requests').catch(() => [] as Amenity[]),
+      ]);
+      setGymId(gymData._id || gymData.id || '');
+      const amenNames: string[] = (gymData.amenities || []).map((a: any) =>
+        typeof a === 'string' ? a : (a.name || '')
+      );
+      setGymAmenities(amenNames);
+      setAllAmenities(toAmenityArray(masterData));
+      setPendingRequests(toAmenityArray(requestData).filter((a) => a.status === 'pending').map((a) => a.name));
+    } catch {
+      setError('Failed to load amenities. Please refresh.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { loadAmenities(); }, [loadAmenities]);
 
   const toggleAmenity = async (name: string) => {
     if (!gymId || toggling) return;
@@ -64,12 +70,19 @@ export default function AmenitiesPage() {
 
   const requestAmenity = async () => {
     if (!newName.trim() || requesting) return;
+    const cleanName = newName.trim();
     setRequesting(true);
     try {
-      await api.post('/master/amenities/request', { name: newName.trim(), gymId });
-      setPendingRequests(p => [...p, newName.trim()]);
+      const result = await api.post<Amenity>('/master/amenities/request', { name: cleanName });
+      const amenityName = result?.name || cleanName;
+      if (result?.status === 'pending') {
+        setPendingRequests(p => p.includes(amenityName) ? p : [...p, amenityName]);
+        toast('Request submitted - pending admin approval', 'info');
+      } else {
+        setAllAmenities(p => p.some(a => a.name === amenityName) ? p : [...p, { id: result?.id, _id: result?._id, name: amenityName, status: result?.status }]);
+        toast(`${amenityName} is already available. You can select it now.`, 'info');
+      }
       setNewName('');
-      toast('Request submitted — pending admin approval', 'info');
     } catch {
       toast('Failed to submit request', 'error');
     } finally {

@@ -190,7 +190,7 @@ export default function ExploreHub() {
           ))}
         </View>
 
-        <View style={{ height: 32 }} />
+        <View style={{ height: 8 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -198,7 +198,7 @@ export default function ExploreHub() {
 
 const s = StyleSheet.create({
   root:   { flex: 1, backgroundColor: colors.bg },
-  scroll: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 132 },
+  scroll: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 36 },
 
   // Header
   header:   { marginBottom: 20 },

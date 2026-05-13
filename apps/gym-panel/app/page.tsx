@@ -19,6 +19,8 @@ export default function GymDashboard() {
   const [gym, setGym] = useState<GymInfo | null>(null);
   const [checkinCount, setCheckinCount] = useState<number | null>(null);
   const [recentCheckins, setRecentCheckins] = useState<Checkin[]>([]);
+  const [activeMembers, setActiveMembers] = useState<number | null>(null);
+  const [mtdRevenue, setMtdRevenue] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,12 +30,24 @@ export default function GymDashboard() {
         api.get<GymInfo>('/gyms/my-gym'),
         api.get<{ count: number }>('/checkins/today-count'),
         api.get<Checkin[]>('/checkins/recent'),
+        api.get<any>('/gyms/my-members'),
+        api.get<any>('/settlements/my-gym'),
       ]);
       if (results[0].status === 'fulfilled') setGym(results[0].value);
       if (results[1].status === 'fulfilled') setCheckinCount(results[1].value?.count ?? null);
       const raw2 = results[2].status === 'fulfilled' ? results[2].value : null;
       const checkins: Checkin[] = Array.isArray(raw2) ? raw2 : (raw2 as any)?.data ?? [];
       setRecentCheckins(checkins);
+      const rawMembers = results[3].status === 'fulfilled' ? results[3].value : null;
+      const members = Array.isArray(rawMembers) ? rawMembers : rawMembers?.members || rawMembers?.data || [];
+      setActiveMembers(Array.isArray(members) ? members.filter((m: any) => (m.status || '').toLowerCase() === 'active').length : null);
+      const settlementData = results[4].status === 'fulfilled' ? results[4].value : null;
+      const history = Array.isArray(settlementData?.history) ? settlementData.history : [];
+      const month = new Date().toISOString().slice(0, 7);
+      const revenue = history
+        .filter((row: any) => String(row.periodStart || row.createdAt || '').slice(0, 7) === month)
+        .reduce((sum: number, row: any) => sum + Number(row.netPayout || row.amount || 0), 0);
+      setMtdRevenue(revenue || null);
       setLoading(false);
     };
     fetchAll();
@@ -41,11 +55,11 @@ export default function GymDashboard() {
 
   const stats = [
     { label: "Today's Check-ins", value: checkinCount !== null ? String(checkinCount) : '—', change: 'today', icon: Calendar },
-    { label: 'Active Members', value: '—', change: 'live', icon: Users },
-    { label: 'Avg Rating', value: gym?.rating ? String(gym.rating) : '—', change: '+0.1', icon: Star },
-    { label: 'MTD Revenue', value: '₹—', change: 'est.', icon: DollarSign },
+    { label: 'Active Members', value: activeMembers !== null ? String(activeMembers) : '—', change: 'live', icon: Users },
+    { label: 'Avg Rating', value: gym?.rating ? String(gym.rating) : '—', change: 'live', icon: Star },
+    { label: 'MTD Revenue', value: mtdRevenue !== null ? `₹${mtdRevenue.toLocaleString('en-IN')}` : '₹—', change: 'month', icon: DollarSign },
     { label: 'QR Scans', value: checkinCount !== null ? String(checkinCount) : '—', change: 'today', icon: QrCode },
-    { label: 'Trend', value: '+8%', change: 'vs last mo', icon: TrendingUp },
+    { label: 'Trend', value: '—', change: 'needs report API', icon: TrendingUp },
   ];
 
   return (

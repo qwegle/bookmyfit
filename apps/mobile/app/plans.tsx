@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ScrollView, View, Text, TouchableOpacity, StyleSheet, Dimensions, Image } from 'react-native';
+import { Alert, ScrollView, View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { colors, fonts, radius } from '../theme/brand';
@@ -79,7 +79,7 @@ const HOW_STEPS = [
   { num: '4', label: 'Start Workout' },
 ];
 
-type PlanCard = typeof PLANS[number] & { priceNumber?: number };
+type PlanCard = typeof PLANS[number] & { priceNumber?: number | null; unavailableReason?: string | null };
 
 function positiveNumber(value: any): number | null {
   const num = Number(value);
@@ -116,6 +116,7 @@ function minMonthlyPriceFromGymPlans(plans: any[]) {
 export default function PlansScreen() {
   const { gymId, gymName } = useLocalSearchParams<{ gymId?: string; gymName?: string }>();
   const [serverPlans, setServerPlans] = useState<any>(null);
+  const [plansLoading, setPlansLoading] = useState(true);
   const [selectedGym, setSelectedGym] = useState<any>(null);
   const [gymPlans, setGymPlans] = useState<any[]>([]);
   const [activeGymSubIds, setActiveGymSubIds] = useState<Set<string>>(new Set());
@@ -124,9 +125,11 @@ export default function PlansScreen() {
 
   useEffect(() => {
     let active = true;
+    setPlansLoading(true);
     subscriptionsApi.plans()
       .then((data: any) => { if (active) setServerPlans(data || null); })
-      .catch(() => { if (active) setServerPlans(null); });
+      .catch(() => { if (active) setServerPlans(null); })
+      .finally(() => { if (active) setPlansLoading(false); });
     return () => { active = false; };
   }, []);
 
@@ -172,19 +175,17 @@ export default function PlansScreen() {
 
   const displayPlans: PlanCard[] = useMemo(() => {
     const dayPrice = positiveNumber(selectedGym?.dayPassPrice)
-      || positiveNumber(serverPlans?.day_pass?.basePrice)
-      || 149;
-    const sameMonthly = minMonthlyPriceFromGymPlans(gymPlans)
-      || positiveNumber(selectedGym?.sameGymMonthlyPrice)
-      || positiveNumber(serverPlans?.same_gym?.basePrice)
-      || 599;
-    const multiMonthly = positiveNumber(serverPlans?.multi_gym?.basePrice) || 1499;
+      || positiveNumber(serverPlans?.day_pass?.basePrice);
+    const activeGymPlans = gymPlans.filter((plan) => plan?.isActive !== false && positiveNumber(plan?.price || plan?.basePrice));
+    const sameMonthly = minMonthlyPriceFromGymPlans(activeGymPlans);
+    const sameGymUnavailable = !!gymId && !plansLoading && activeGymPlans.length === 0;
+    const multiMonthly = positiveNumber(serverPlans?.multi_gym?.basePrice);
 
     return PLANS.map((plan) => {
       if (plan.id === 'day_pass') {
         return {
           ...plan,
-          price: formatPrice(dayPrice),
+          price: dayPrice ? formatPrice(dayPrice) : (plansLoading ? 'Loading...' : (gymId ? 'Unavailable' : 'Select gym')),
           priceUnit: '/ day',
           priceNumber: dayPrice,
           features: serverPlans?.day_pass?.features || plan.features,
@@ -194,22 +195,30 @@ export default function PlansScreen() {
       if (plan.id === 'same_gym') {
         return {
           ...plan,
-          price: formatPrice(sameMonthly),
+          price: sameMonthly ? formatPrice(sameMonthly) : (plansLoading ? 'Loading...' : (gymId ? 'Not set' : 'Select gym')),
           priceUnit: '/ month',
           priceNumber: sameMonthly,
-          features: serverPlans?.same_gym?.features || plan.features,
+          tagline: sameGymUnavailable ? 'This gym has not added membership plans yet' : plan.tagline,
+          features: activeGymPlans.length
+            ? (serverPlans?.same_gym?.features || plan.features)
+            : (gymId
+              ? ['This gym has not configured membership plans yet', 'You can still buy a day pass if available', 'Try Multi Gym Pass for access across partner gyms']
+              : plan.features),
+          unavailableReason: sameGymUnavailable
+            ? `${selectedGymDisplayName} has not added subscription plans yet. Please choose a day pass, multi-gym pass, or check again after the gym adds plans.`
+            : null,
         };
       }
 
       return {
         ...plan,
-        price: formatPrice(multiMonthly),
+        price: multiMonthly ? formatPrice(multiMonthly) : (plansLoading ? 'Loading...' : 'Unavailable'),
         priceUnit: '/ month',
         priceNumber: multiMonthly,
         features: serverPlans?.multi_gym?.features || plan.features,
       };
     });
-  }, [gymPlans, selectedGym, serverPlans]);
+  }, [gymId, gymPlans, plansLoading, selectedGym, selectedGymDisplayName, serverPlans]);
 
   const handleSelect = (plan: PlanCard) => {
     if (hasSelectedGymAccess && (plan.id === 'same_gym' || plan.id === 'day_pass')) {
@@ -218,6 +227,10 @@ export default function PlansScreen() {
     }
     if ((plan.id === 'same_gym' || plan.id === 'day_pass') && !gymId) {
       router.push('/gyms' as any);
+      return;
+    }
+    if (!plan.priceNumber) {
+      Alert.alert('Plan unavailable', plan.unavailableReason || 'This plan does not have active pricing from the server yet. Please try again later.');
       return;
     }
     const selectedGymName = gymName || selectedGym?.name || '';
@@ -239,7 +252,7 @@ export default function PlansScreen() {
         planName: plan.name,
         gymId: gymId || '',
         gymName: selectedGymName,
-        basePrice: String(plan.priceNumber || Number(plan.price.replace(/[^\d.]/g, '')) || 999),
+        basePrice: String(plan.priceNumber),
         isDayPass: plan.id === 'day_pass' ? 'true' : 'false',
         gymPlansJson: sameGymPlanPayload.length ? JSON.stringify(sameGymPlanPayload) : '',
       },
@@ -249,7 +262,9 @@ export default function PlansScreen() {
   const ctaLabel = (plan: PlanCard) =>
     hasSelectedGymAccess && (plan.id === 'same_gym' || plan.id === 'day_pass')
       ? 'Book Slot'
-      : (plan.id === 'same_gym' || plan.id === 'day_pass') && !gymId ? 'Select Gym' : plan.cta;
+      : (plan.id === 'same_gym' || plan.id === 'day_pass') && !gymId
+        ? 'Select Gym'
+        : (!plan.priceNumber && !plansLoading && plan.id === 'same_gym' && gymId) ? 'Not Available' : plan.cta;
 
   return (
     <SafeAreaView style={s.root}>
@@ -315,8 +330,9 @@ export default function PlansScreen() {
               )}
             </View>
 
-            {/* Gym image */}
-            <Image source={{ uri: plan.img }} style={s.cardImage} />
+            <View style={[s.cardImage, { backgroundColor: plan.bg }]}>
+              <IconDumbbell size={34} color={plan.accent} />
+            </View>
 
             {/* Features */}
             <View style={s.featuresSection}>
@@ -483,7 +499,7 @@ const s = StyleSheet.create({
   },
   badgeText: { fontFamily: fonts.sansBold, fontSize: 10 },
 
-  cardImage: { width: '100%', height: 150, resizeMode: 'cover' },
+  cardImage: { width: '100%', height: 112, alignItems: 'center', justifyContent: 'center' },
 
   featuresSection: { padding: 16, gap: 10 },
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },

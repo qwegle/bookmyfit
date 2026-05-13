@@ -69,12 +69,22 @@ export default function SettlementsPage() {
   useEffect(() => { setPage(1); }, [q]);
 
   const approveSettlement = async (id: string) => {
-    try { await api.post(`/settlements/${id}/approve`); } catch { /* optimistic */ }
-    setSettlements((prev) => prev.map((s) => s.id === id ? { ...s, status: 'approved' } : s));
+    try {
+      await api.post(`/settlements/${id}/approve`);
+      setSettlements((prev) => prev.map((s) => s.id === id ? { ...s, status: 'approved' } : s));
+      toast('Settlement approved');
+    } catch (e: any) {
+      toast(e.message || 'Failed to approve settlement', 'error');
+    }
   };
   const markPaid = async (id: string) => {
-    try { await api.post(`/settlements/${id}/pay`); } catch { /* optimistic */ }
-    setSettlements((prev) => prev.map((s) => s.id === id ? { ...s, status: 'paid' } : s));
+    try {
+      await api.post(`/settlements/${id}/pay`);
+      setSettlements((prev) => prev.map((s) => s.id === id ? { ...s, status: 'paid' } : s));
+      toast('Settlement marked paid');
+    } catch (e: any) {
+      toast(e.message || 'Failed to mark settlement paid', 'error');
+    }
   };
 
   const handleGenerate = async () => {

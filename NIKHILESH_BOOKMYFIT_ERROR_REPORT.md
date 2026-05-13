@@ -33,6 +33,43 @@ Resolved locally during this work:
 - Mobile homepage/store UI changes requested by Nikhilesh were started.
 - Automated QA tooling now runs: backend ESLint config exists, frontend Next ESLint configs exist, and backend Jest has a Cashfree safety test suite.
 
+### 2026-05-12 Real Data / Demo Data Audit Update
+
+Requested scope: user mobile side, gym side, and admin side after login. OTP/login behavior was not changed because OTP is intentionally using the default production-safe/dev flow for now.
+
+Deployment approach confirmed:
+- Changes are made locally first.
+- Local builds/type checks must pass.
+- Then changes should be committed/pushed and deployed to the live server.
+- Direct live-server edits should be avoided except for urgent server config or PM2/nginx/env issues.
+
+Errors and demo/fixed-data issues found and fixed locally:
+- Mobile user app no longer injects fallback gyms, spa centres, home-service providers, products, videos, notifications, invoice data, history visits, slot/session data, or subscription detail data when APIs are empty or failing.
+- Mobile gym/profile/plans/duration/subscription pages now prefer actual API pricing and subscription data. Missing pricing now blocks checkout instead of silently using hardcoded fallback prices.
+- Mobile nearby and multi-gym network screens now show only API gyms and empty/error states when no real gyms are returned.
+- Old mobile gym-portal screens no longer show mock dashboard members/check-ins when APIs fail.
+- Admin settings no longer saves platform settings in browser localStorage. It now uses backend `/admin/settings`.
+- Admin user list now uses real `/users?role=super_admin` filtering, and Add Admin creates a real backend super-admin user with an initial password.
+- Admin commission settings no longer use in-memory-only backend state; rates now persist through the `app_config` database table.
+- Admin gym, user, and settlement actions no longer update the UI optimistically when the backend rejects the request.
+- Admin wellness no longer creates local fake partners/services on failed save and no longer displays default commission values as if they came from the API.
+- Gym panel profile/settings/dashboard/report/settlement pages were tightened so API failures show error/empty states instead of fake success or old placeholder values.
+- Backend boot seeding is now opt-in with `SEED_ON_BOOT=true` and disabled in production.
+- Backend homepage and fraud alert endpoints no longer auto-seed fake homepage/fraud data when tables are empty.
+- Backend session slot generation no longer auto-creates default bookable slots when a gym has not configured schedules.
+
+Verification run on 2026-05-12:
+
+| Area | Command | Result |
+| --- | --- | --- |
+| Backend | `pnpm.cmd --filter backend build` | Passed |
+| Admin panel | `pnpm.cmd --filter admin-panel build` | Passed |
+| Gym panel | `pnpm.cmd --filter gym-panel build` | Passed |
+| Mobile TypeScript | `pnpm.cmd --filter mobile exec tsc --noEmit` | Passed |
+
+Remaining intentional item:
+- Cashfree mock mode still exists only behind `CASHFREE_MOCK_MODE=true` and `NODE_ENV !== 'production'`. This is for local/dev testing and should stay disabled on the live server.
+
 ## Build and Verification Results
 
 Commands run locally:
@@ -2261,3 +2298,257 @@ Remaining action before production deploy:
 - Commit the intended local changes only, excluding generated artifacts and local-only env files.
 - Decide whether server should pull from `nikhilesh121/bookmyfit` or local should push to `qwegle/bookmyfit`; both sides currently point to different remotes.
 - Preserve or source-control the production CORS domain list so the server-only `backend/src/main.ts` change is not lost.
+
+## Change 028 - Mobile extra bottom whitespace cleanup
+
+Date: 2026-05-12
+
+Scope requested:
+- Remove odd extra scroll space and blank bottom areas from the mobile app pages, blogs/sections, user side, gym side, and subscription/purchase flows.
+
+Findings:
+- Main tab screens and gym portal tab screens were still reserving `paddingBottom: 132` even though the bottom tab bar already has its own measured height.
+- Some pages also added manual spacer views after already applying bottom padding, creating duplicated blank scroll tails.
+- Fixed-action screens had oversized footer clearance, especially duration selection, order summary, product detail, gym detail, wellness booking, and cart.
+
+Changes made locally:
+- Reduced repeated tab-screen bottom padding to compact page padding on home, explore, store, bookings, profile, subscriptions, and gym portal tabs.
+- Reduced duplicate manual spacer views in home, explore, KYC, earnings, wellness, multi-gym network, and order pages.
+- Tightened fixed-footer clearance on duration selection, order summary, product detail, gym detail, wellness service booking, cart, and gym listing.
+- Kept enough safe-area clearance for sticky CTAs and payment/action bars so content still scrolls above the footer.
+
+Verification:
+- `pnpm.cmd --filter mobile exec tsc --noEmit` passed.
+- `git diff --check -- apps/mobile/app` passed with only existing LF/CRLF conversion warnings.
+
+## Change 029 - Local backend, database, mobile web smoke check
+
+Date: 2026-05-12
+
+Scope requested:
+- Check locally first before live deployment.
+- Confirm local database/API usage and mobile web accessibility.
+
+Local database:
+- Docker Desktop was started.
+- Local containers are available:
+  - `bmf-postgres` on port `5432`.
+  - `bmf-redis` on port `6379`.
+- Local Postgres database `bookmyfit` contains 33 public tables.
+- Local row counts at verification time:
+  - `gyms`: 13
+  - `users`: 16
+  - `subscriptions`: 16
+  - `gym_plans`: 2
+
+Local app/API configuration:
+- Mobile development config resolves API base to `http://localhost:3003` via `apps/mobile/app.config.js`.
+- Portals default to `http://localhost:3003` through `NEXT_PUBLIC_API_URL` fallback.
+- `apps/mobile/app.json` still contains production `extra.apiUrl`, but Expo uses `app.config.js` during development.
+
+Verification:
+- `pnpm.cmd --filter backend build` passed.
+- Local backend started from `backend/dist/src/main.js`.
+- `GET http://localhost:3003/api/v1/health` returned 200 with service `bookmyfit-api`.
+- Expo web must be started with `--offline` in this sandbox because Expo dependency validation tries to call the online Expo API.
+- Local mobile web routes returned 200:
+  - `/login`
+  - `/`
+  - `/gyms`
+  - `/plans`
+  - `/wellness`
+  - `/multi-gym-network`
+  - `/cart`
+- Local API routes returned 200:
+  - `/api/v1/gyms?limit=5`
+  - `/api/v1/subscriptions/plans`
+  - `/api/v1/homepage/config`
+  - `/api/v1/wellness/services/all`
+  - `/api/v1/master/amenities`
+- `POST /api/v1/auth/otp/send` from origin `http://localhost:8081` returned 200 with `Access-Control-Allow-Origin: http://localhost:8081` and dev OTP `123456`.
+
+Testing note:
+- Long-running dev servers are cleaned up by the Codex command sandbox after each command, so they were smoke-tested inside one command rather than left running.
+- For manual local browser testing, run backend and Expo mobile web in user terminals:
+  - `pnpm.cmd --filter backend start:dev`
+  - `pnpm.cmd --filter mobile exec expo start --web --offline --port 8081`
+
+## Change 030 - Gym timing display and amenities approval flow
+
+Date: 2026-05-13
+
+Scope requested:
+- Show gym profile open/close times in the same human-readable AM/PM format users expect, not raw 24-hour values like `14:00`.
+- Confirm admin-side amenity creation and gym-request approval/rejection flow.
+- Keep local testing on the local Postgres/Redis services before live deployment.
+
+Changes made locally:
+- Gym profile preview now formats `HH:mm` values as AM/PM labels, for example `14:00` displays as `2:00 PM`.
+- Mobile gym detail opening hours and break hours now format backend `HH:mm` ranges as AM/PM labels.
+- Admin Categories & Amenities now loads the protected admin full amenity list from `/master/amenities/all`.
+- Public `/master/amenities` stays limited to approved active amenities, even if `includeAll=true` is passed.
+- Gym amenity requests are now attached to the logged-in gym owner/account on the backend instead of trusting a submitted `gymId`.
+- Gym Amenities page now reloads the logged-in gym's pending amenity requests from `/master/amenities/my-requests`, so pending requests do not disappear after refresh.
+- If a gym requests an amenity that already exists, the gym panel tells them it is already available instead of showing a false pending request.
+- Admin can approve amenity requests with `/master/amenities/:id/approve` and reject/remove them with `DELETE /master/amenities/:id`.
+
+Product decision:
+- Admin should approve/reject amenity requests. Gyms should request new amenities and select only approved active amenities. Giving a gym approval rights over its own master-data request would make the global amenity list unsafe and inconsistent.
+
+Verification:
+- `pnpm.cmd --filter backend build` passed.
+- `pnpm.cmd --filter gym-panel build` passed.
+- `pnpm.cmd --filter admin-panel build` passed.
+- `pnpm.cmd --filter mobile exec tsc --noEmit` passed.
+- Local Docker services confirmed:
+  - `bmf-postgres` on `localhost:5432`.
+  - `bmf-redis` on `localhost:6379`.
+- Local amenities API smoke passed:
+  - Public `GET /api/v1/master/amenities?includeAll=true` returned 200 but only the public approved list.
+  - Unauthenticated `GET /api/v1/master/amenities/all` returned 401.
+  - Admin-authenticated `GET /api/v1/master/amenities/all` returned data.
+  - Gym-authenticated amenity request created a pending request with the logged-in gym id.
+  - Gym-authenticated `GET /api/v1/master/amenities/my-requests` returned the pending request.
+  - Admin reject changed the test request with affected count `1`.
+
+Local URLs confirmed responding:
+- Backend health: `http://localhost:3003/api/v1/health`
+- API docs: `http://localhost:3003/api/docs`
+- Gym panel: `http://localhost:3001`
+- Admin panel: `http://localhost:3004`
+- Corporate panel: `http://localhost:3002`
+- Wellness portal: `http://localhost:3005`
+- Landing/user web: `http://localhost:5004`
+- Mobile web: `http://localhost:8081`
+
+## Change 031 - Default listing images and gym-owned subscription plans
+
+Date: 2026-05-13
+
+Scope requested:
+- Do not show blank gym cards, gym subscription cards, wellness partner cards, or wellness service cards when the API record has no image.
+- Same Gym subscriptions must use the selected gym's own active plans only.
+- If a gym has no active subscription plan configured, do not show or sell a generic default Same Gym plan.
+
+Findings:
+- Local Postgres has 13 gyms.
+- Local `gym_plans` currently has 2 rows, and both rows are inactive in the local database.
+- Backend gym records use `coverPhoto` and `photos`, while several mobile screens were still reading only `coverImage`, `images`, or `img`.
+- Mobile plan selection was falling back from gym plans to legacy `sameGymMonthlyPrice` and then to generic `/subscriptions/plans.same_gym.basePrice`.
+- Backend Same Gym purchase still accepted checkout without `gymPlanId` and priced it from legacy gym pricing/default values.
+
+Changes made locally:
+- Added shared mobile image fallback helpers for default gym, wellness partner, wellness service, and homepage hero images.
+- Updated mobile gym list, gym detail, multi-gym network, subscriptions, subscription detail, home featured gym, wellness, spa centre, and home service screens to use real API image aliases first and default images second.
+- Backend gym normalization now exposes `coverImage/images` aliases from `coverPhoto/photos` so mobile and portal callers receive consistent image fields.
+- Gym profile updates now accept `coverImage/images` aliases and store them as `coverPhoto/photos`.
+- Approved KYC gym photos now sync into public `coverPhoto/photos` when the gym is approved.
+- Mobile Same Gym plan selection now uses only active `gym_plans` for that gym.
+- If the selected gym has no active plans, the Same Gym card shows `Not set` / `Not Available` and explains that the gym has not configured plans yet.
+- Duration selection no longer creates synthetic 1/3/6/12 month Same Gym options unless real gym plans were passed in.
+- Backend Same Gym purchase now requires an active `gymPlanId`; checkout without one returns `400`.
+- Subscription list responses now include gym image aliases and gym plan labels when available.
+- Multi-gym network responses now normalize gym image aliases too.
+
+Product decision:
+- Gyms decide and manage their own Same Gym membership plans in the gym portal Plans page.
+- Admin/platform pricing remains appropriate for Multi Gym and default day-pass fallback only.
+- A gym with no active Same Gym plans should not be sold as a Same Gym subscription until the gym activates at least one plan.
+
+Verification:
+- `pnpm.cmd --filter backend build` passed.
+- `pnpm.cmd --filter mobile exec tsc --noEmit` passed.
+- Updated local backend health returned 200 at `http://localhost:3003/api/v1/health`.
+- `GET /api/v1/subscriptions/plans` now returns `same_gym.basePrice = null` and `requiresGymPlan = true`.
+- `GET /api/v1/gym-plans/by-gym/8b7af325-ef23-4c1d-b984-4ef40e329593` returned an empty active plan list because the local plan rows are inactive.
+- Mobile web routes `/gyms` and `/plans?gymId=8b7af325-ef23-4c1d-b984-4ef40e329593&gymName=BookMyFit%20Demo%20Gym` returned 200.
+- Local DB check confirmed `gyms = 13`.
+- Local DB check confirmed `gym_plans = 2`, both inactive in the table output.
+
+## Change 032 - Mobile web scroll, home gym list, slider, and image fallbacks
+
+Date: 2026-05-13
+
+Scope requested:
+- Fix mobile web pages scrolling into blank space outside the app frame.
+- Restore the home page bottom gym list.
+- Fix homepage/wellness slider sizing in mobile web responsive mode.
+- Do not show blank wellness/product imagery when API image fields are missing.
+- Improve the wellness "View Services" button layout.
+
+Findings:
+- React Native Web had no global `html/body/#root` viewport guard, so oversized background effects could expand the browser document and create blank scroll space.
+- `AuroraBackground` used fixed module-load dimensions and did not clip overflow, so decorative blobs could leak outside the app shell on web resize/mobile emulation.
+- The home `GymListingSection` still existed but was no longer rendered.
+- Product screens used different image field orders and sometimes passed an undefined image source.
+- Wellness partner/service list screens did not share the same image alias order.
+
+Changes made locally:
+- Added a web-only root style guard in mobile `_layout.tsx` to keep browser/body scroll inside the app viewport.
+- Made `AuroraBackground` responsive with `useWindowDimensions()` and clipped its overflow.
+- Reduced the login screen's flexible blank spacer so the CTA no longer creates a large empty scroll region.
+- Restored the home page bottom "Gyms Near You" list using real `/gyms?limit=6` API data, with homepage featured gyms only as an API-empty fallback.
+- Made the home and wellness hero sliders use current viewport width, `getItemLayout`, and scroll failure recovery.
+- Added shared product, wellness partner, and wellness service image resolvers.
+- Updated home products, store products, product detail, cart, wellness, spa centres, home services, and wellness detail screens to use the shared image fallbacks.
+- Restyled wellness provider "View Services" buttons to a smaller consistent pill and updated spa/home service cards to use the same action label.
+
+Verification:
+- `pnpm.cmd --filter mobile exec tsc --noEmit` passed.
+- Local mobile routes returned 200:
+  - `http://localhost:8081`
+  - `http://localhost:8081/login`
+  - `http://localhost:8081/wellness`
+- Local backend health returned 200 at `http://localhost:3003/api/v1/health`.
+- Local API smoke confirmed:
+  - `GET /api/v1/homepage/config` returned 6 sections.
+  - `GET /api/v1/gyms?limit=6` returned 6 gyms.
+  - `GET /api/v1/wellness/services/all` returned 25 services.
+  - `GET /api/v1/store/products` returned 6 products.
+
+## Change 033 - Live deployment of local fixes
+
+Date: 2026-05-13
+
+Scope requested:
+- Update the live server with the latest tested local fixes.
+
+Deployment notes:
+- Live server path verified: `/var/www/html/bookmyfit`.
+- Local and live repos were both on commit `0897c3fff56ee38c3061bc74b511de49db6aaa2a`.
+- Live repo remote still differs from local, so the tested local changes were deployed to the server as a verified patch rather than by `git pull`.
+- New mobile helper file `apps/mobile/lib/imageFallbacks.ts` was copied to the live repo.
+
+Live build and restart:
+- Built on the live server:
+  - `backend`
+  - `gym-panel`
+  - `admin-panel`
+  - `corporate-panel`
+  - `@bmf/wellness-portal`
+  - `mobile` TypeScript check
+- Restarted and saved PM2 apps:
+  - `BMF`
+  - `bmf-backend`
+  - `bmf-gym`
+  - `bmf-corp`
+  - `bmf-admin`
+  - `bmf-wellness`
+
+Live verification:
+- Public routes returned 200:
+  - `https://bookmyfit.in/api/v1/health`
+  - `https://bookmyfit.in`
+  - `https://gym.bookmyfit.in/login`
+  - `https://admin.bookmyfit.in/login`
+  - `https://corporate.bookmyfit.in/login`
+  - `https://wellness.bookmyfit.in/login`
+- Live API routes returned 200:
+  - `https://bookmyfit.in/api/v1/homepage/config`
+  - `https://bookmyfit.in/api/v1/gyms?limit=6`
+  - `https://bookmyfit.in/api/v1/wellness/services/all`
+  - `https://bookmyfit.in/api/v1/store/products`
+  - `https://bookmyfit.in/api/v1/subscriptions/plans`
+- `nginx -t` passed.
+- Backend PM2 logs showed a clean NestJS boot.
+- Old gym/admin Next.js error-log entries were timestamped before this deploy and were not fresh post-restart errors.

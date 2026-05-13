@@ -1,10 +1,11 @@
-import { Module, Controller, Get, Post, Put, Body, UseGuards, Req, Query, Param } from '@nestjs/common';
+import { Module, Controller, Get, Post, Put, Body, UseGuards, Req, Query, Param, BadRequestException } from '@nestjs/common';
 import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as bcrypt from 'bcryptjs';
 import { paginate, paginatedResponse } from '../../common/pagination.helper';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Injectable } from '@nestjs/common';
-import { UserEntity } from '../../database/entities/user.entity';
+import { UserEntity, UserRole } from '../../database/entities/user.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/guards/roles.decorator';
@@ -20,17 +21,48 @@ class UpdateUserDto {
   gender?: string;
 }
 
+const USER_ROLES: UserRole[] = ['super_admin', 'gym_owner', 'gym_staff', 'corporate_admin', 'wellness_partner', 'end_user'];
+
 @Injectable()
 class UsersService {
   constructor(@InjectRepository(UserEntity) private readonly repo: Repository<UserEntity>) {}
 
   me(id: string) { return this.repo.findOne({ where: { id } }); }
-  async list(page: any = 1, limit: any = 20, search?: string) {
+  async list(page: any = 1, limit: any = 20, search?: string, role?: UserRole) {
     const { skip, take, page: p, limit: l } = paginate(page, limit);
     const qb = this.repo.createQueryBuilder('u').orderBy('u.createdAt', 'DESC').skip(skip).take(take);
-    if (search) qb.where('u.name ILIKE :s OR u.phone ILIKE :s', { s: `%${search}%` });
+    if (role) {
+      if (!USER_ROLES.includes(role)) throw new BadRequestException('Invalid role');
+      qb.andWhere('u.role = :role', { role });
+    }
+    if (search) qb.andWhere('(u.name ILIKE :s OR u.phone ILIKE :s OR u.email ILIKE :s)', { s: `%${search}%` });
     const [data, total] = await qb.getManyAndCount();
     return paginatedResponse(data, total, p, l);
+  }
+
+  async createAdmin(data: { name?: string; email?: string; password?: string }) {
+    const email = data.email?.trim().toLowerCase();
+    if (!email) throw new BadRequestException('Email is required');
+    if (!data.password || data.password.length < 6) throw new BadRequestException('Password must be at least 6 characters');
+    const existing = await this.repo.findOne({ where: { email } });
+    if (existing) throw new BadRequestException('An account with this email already exists');
+    const passwordHash = await bcrypt.hash(data.password, 10);
+    const user = await this.repo.save(this.repo.create({
+      email,
+      passwordHash,
+      name: data.name?.trim() || email,
+      role: 'super_admin',
+      isActive: true,
+    }));
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      isActive: user.isActive,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
   }
 
   async update(id: string, data: Partial<UserEntity>) {
@@ -116,8 +148,13 @@ class UsersController {
   @Get('me/loyalty') loyalty(@Req() req: any) { return this.svc.getLoyaltyPoints(req.user.userId); }
 
   @Get() @UseGuards(RolesGuard) @Roles('super_admin')
-  list(@Query('page') page = 1, @Query('limit') limit = 20, @Query('search') search?: string) {
-    return this.svc.list(+page, +limit, search);
+  list(@Query('page') page = 1, @Query('limit') limit = 20, @Query('search') search?: string, @Query('role') role?: UserRole) {
+    return this.svc.list(+page, +limit, search, role);
+  }
+
+  @Post('admins') @UseGuards(RolesGuard) @Roles('super_admin')
+  createAdmin(@Body() body: { name?: string; email?: string; password?: string }) {
+    return this.svc.createAdmin(body);
   }
 
   @Post(':id/suspend') @UseGuards(RolesGuard) @Roles('super_admin')

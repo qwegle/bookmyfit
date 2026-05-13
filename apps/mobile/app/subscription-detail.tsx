@@ -7,6 +7,7 @@ import { colors, fonts, radius } from '../theme/brand';
 import { IconArrowLeft, IconRefresh, IconFileText, IconCalendar, IconDumbbell, IconBolt } from '../components/Icons';
 import { subscriptionsApi } from '../lib/api';
 import { subscriptionPlanType } from '../lib/subscriptionAccess';
+import { DEFAULT_GYM_IMAGE, firstImage } from '../lib/imageFallbacks';
 
 function calcProgress(startDate: string, endDate: string) {
   const start = dateMs(startDate, false);
@@ -35,13 +36,8 @@ function dateMs(value: string, endOfDay: boolean) {
 export default function SubscriptionDetail() {
   const {
     subscriptionId,
-    fallbackName, fallbackPlan, fallbackStatus,
-    fallbackStart, fallbackEnd, fallbackImg, fallbackPlanType, fallbackGymId,
   } = useLocalSearchParams<{
     subscriptionId?: string;
-    fallbackName?: string; fallbackPlan?: string; fallbackStatus?: string;
-    fallbackStart?: string; fallbackEnd?: string; fallbackImg?: string;
-    fallbackPlanType?: string; fallbackGymId?: string;
   }>();
   const [sub, setSub] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -57,18 +53,7 @@ export default function SubscriptionDetail() {
       .finally(() => setLoading(false));
   }, [subscriptionId]);
 
-  // Build sub from fallback params when API can't find it
-  const resolvedSub = sub || (fallbackName ? {
-    id: subscriptionId,
-    gymName: fallbackName,
-    plan: { name: fallbackPlan || 'Pass' },
-    status: fallbackStatus || 'active',
-    startDate: fallbackStart || '',
-    endDate: fallbackEnd || '',
-    coverImage: fallbackImg || '',
-    planType: fallbackPlanType || 'same_gym',
-    gymId: fallbackGymId || '',
-  } : null);
+  const resolvedSub = sub;
 
   if (loading) {
     return (
@@ -113,8 +98,8 @@ export default function SubscriptionDetail() {
   const duration = sub2.durationMonths ? `${sub2.durationMonths} Month${sub2.durationMonths > 1 ? 's' : ''}` : '';
   const status = (sub2.status || 'active').toLowerCase();
   const isActive = status === 'active';
-  const img = sub2.gym?.coverImage || sub2.gym?.images?.[0] || sub2.coverImage || fallbackImg || 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=600&q=80';
-  const progress = sub2.progress ?? (sub2.startDate && sub2.endDate ? calcProgress(sub2.startDate, sub2.endDate) : 0.5);
+  const img = firstImage(sub2.gym?.images, sub2.gym?.photos, sub2.gym?.coverImage, sub2.gym?.coverPhoto, sub2.coverImage) || DEFAULT_GYM_IMAGE;
+  const progress = sub2.progress ?? (sub2.startDate && sub2.endDate ? calcProgress(sub2.startDate, sub2.endDate) : 0);
   const daysLeftStr = sub2.endDate ? daysLeft(sub2.endDate) : (isActive ? 'Active' : 'Expired');
   const left = daysLeftStr;
   const startFmt = sub2.startDate ? new Date(sub2.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
@@ -122,7 +107,7 @@ export default function SubscriptionDetail() {
   const subId = sub2.id || sub2._id;
   const planType = subscriptionPlanType(sub2);
   const gymIds = Array.isArray(sub2.gymIds) ? sub2.gymIds : [];
-  const actionGymId = sub2.gym?.id || sub2.gymId || fallbackGymId || gymIds[0] || '';
+  const actionGymId = sub2.gym?.id || sub2.gymId || gymIds[0] || '';
   const shouldBrowseGyms = planType === 'multi_gym' || !actionGymId;
 
   return (

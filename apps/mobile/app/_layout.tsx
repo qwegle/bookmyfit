@@ -8,7 +8,7 @@ import {
   Poppins_700Bold,
   Poppins_800ExtraBold,
 } from '@expo-google-fonts/poppins';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Platform } from 'react-native';
 import { useEffect } from 'react';
 import { colors } from '../theme/brand';
 import { appStorage, getToken, getUser } from '../lib/api';
@@ -47,6 +47,36 @@ export default function RootLayout() {
     Poppins_700Bold,
     Poppins_800ExtraBold,
   });
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const doc = (globalThis as any).document;
+    if (!doc || doc.getElementById('bmf-mobile-web-root-fix')) return;
+
+    const style = doc.createElement('style');
+    style.id = 'bmf-mobile-web-root-fix';
+    style.textContent = `
+      html, body, #root {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #060606;
+      }
+      body {
+        overscroll-behavior: none;
+      }
+      #root {
+        display: flex;
+        min-height: 0;
+      }
+      #root > div {
+        flex: 1;
+        min-height: 0;
+      }
+    `;
+    doc.head.appendChild(style);
+  }, []);
 
   useEffect(() => {
     if (loaded) {
