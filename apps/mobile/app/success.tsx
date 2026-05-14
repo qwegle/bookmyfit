@@ -17,7 +17,7 @@ export default function Success() {
     }>();
 
   const isStoreOrder = planId === 'store_order';
-  const isPtSession = planId === 'pt_session';
+  const isPtSession = planId === 'pt_session' || planId === 'pt_monthly';
   const hasSingleGymAccess = !!gymId && planId !== 'multi_gym';
 
   const scaleAnim = useRef(new Animated.Value(0)).current;
@@ -127,12 +127,14 @@ export default function Success() {
           </TouchableOpacity>
         )}
 
-        <TouchableOpacity
-          style={s.btnGhost}
-          onPress={() => router.replace('/(tabs)/subscriptions')}
-        >
-          <Text style={s.btnGhostText}>View My Subscriptions</Text>
-        </TouchableOpacity>
+        {!isStoreOrder && (
+          <TouchableOpacity
+            style={s.btnGhost}
+            onPress={() => router.replace('/(tabs)/subscriptions')}
+          >
+            <Text style={s.btnGhostText}>View My Subscriptions</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </SafeAreaView>
     </AuroraBackground>

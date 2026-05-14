@@ -172,11 +172,13 @@ class AnalyticsService {
   ) {}
 
   async summary() {
-    const [totalRevenue, activeSubscribers, totalUsers, totalCheckins] = await Promise.all([
+    const [totalRevenue, activeSubscribers, totalUsers, totalCheckins, totalGyms, pendingKyc] = await Promise.all([
       this.subs.createQueryBuilder('s').select('SUM(s."amountPaid")', 'total').getRawOne().then((r) => Number(r?.total || 0)),
       this.subs.count({ where: { status: 'active' } }),
       this.users.count(),
       this.checkins.count({ where: { status: 'success' } }),
+      this.gyms.count(),
+      this.gyms.count({ where: { kycStatus: 'in_review' } }),
     ]);
 
     const thirtyDaysAgo = new Date();
@@ -216,7 +218,7 @@ class AnalyticsService {
       .limit(12)
       .getRawMany();
 
-    return { totalRevenue, activeSubscribers, totalUsers, newSignups, avgCheckinsPerDay, topGyms, topPlans, monthlyRevenue };
+    return { totalRevenue, activeSubscribers, totalUsers, newSignups, avgCheckinsPerDay, totalGyms, pendingKyc, topGyms, topPlans, monthlyRevenue };
   }
 }
 
@@ -435,9 +437,9 @@ class HomepageController {
 
       if (section.type === 'featured_gyms') {
         if (section.featuredGymIds?.length > 0) {
-          section.gyms = await this.gymRepo.find({ where: { id: In(section.featuredGymIds) } });
+          section.gyms = await this.gymRepo.find({ where: { id: In(section.featuredGymIds), status: 'active' as any } });
         } else {
-          section.gyms = await this.gymRepo.find({ take: section.gymLimit || 6 });
+          section.gyms = await this.gymRepo.find({ where: { status: 'active' as any }, take: section.gymLimit || 6 });
         }
       }
 

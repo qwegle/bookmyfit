@@ -87,22 +87,15 @@ export default function SettingsPage() {
   const [city, setCity] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
-  const [hoursWeekday, setHoursWeekday] = useState('');
-  const [hoursSaturday, setHoursSaturday] = useState('');
-  const [hoursSunday, setHoursSunday] = useState('');
   const [gymName, setGymName] = useState('');
 
   // Edit mode per group
   const [editingContact, setEditingContact] = useState(false);
-  const [editingHours, setEditingHours] = useState(false);
 
   // Temp buffers for cancel
   const [tempCity, setTempCity] = useState('');
   const [tempEmail, setTempEmail] = useState('');
   const [tempPhone, setTempPhone] = useState('');
-  const [tempWeekday, setTempWeekday] = useState('');
-  const [tempSaturday, setTempSaturday] = useState('');
-  const [tempSunday, setTempSunday] = useState('');
 
   const [toast, setToast] = useState('');
 
@@ -129,9 +122,6 @@ export default function SettingsPage() {
         setCity(data.city ?? '');
         setContactEmail(data.contactEmail ?? '');
         setContactPhone(data.contactPhone ?? '');
-        setHoursWeekday(data.hoursWeekday ?? '6:00 AM - 10:00 PM');
-        setHoursSaturday(data.hoursSaturday ?? '7:00 AM - 8:00 PM');
-        setHoursSunday(data.hoursSunday ?? '8:00 AM - 6:00 PM');
         setDayPassPrice(data.dayPassPrice != null ? String(data.dayPassPrice) : '');
       } catch {
         showToast('Could not load gym settings.');
@@ -168,9 +158,6 @@ export default function SettingsPage() {
         city,
         contactEmail,
         contactPhone,
-        hoursWeekday,
-        hoursSaturday,
-        hoursSunday,
       });
     } catch (e: any) {
       showToast(e?.message || 'Contact details were not saved.');
@@ -178,39 +165,6 @@ export default function SettingsPage() {
     }
     setEditingContact(false);
     showToast('Contact details saved.');
-  }
-
-  function startEditHours() {
-    setTempWeekday(hoursWeekday);
-    setTempSaturday(hoursSaturday);
-    setTempSunday(hoursSunday);
-    setEditingHours(true);
-  }
-
-  function cancelHours() {
-    setHoursWeekday(tempWeekday);
-    setHoursSaturday(tempSaturday);
-    setHoursSunday(tempSunday);
-    setEditingHours(false);
-  }
-
-  async function saveHours() {
-    try {
-      const endpoint = gymId ? `/gyms/${gymId}` : '/gyms/my-gym';
-      await api.put(endpoint, {
-        city,
-        contactEmail,
-        contactPhone,
-        hoursWeekday,
-        hoursSaturday,
-        hoursSunday,
-      });
-    } catch (e: any) {
-      showToast(e?.message || 'Operating hours were not saved.');
-      return;
-    }
-    setEditingHours(false);
-    showToast('Operating hours saved.');
   }
 
   function startEditPricing() {
@@ -361,67 +315,15 @@ export default function SettingsPage() {
           )}
         </div>
 
-        {/* Operating Hours */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-semibold" style={{ color: 'var(--t)' }}>Operating Hours</span>
-            {!editingHours ? (
-              <button
-                className="btn btn-ghost flex items-center gap-1 text-xs"
-                onClick={startEditHours}
-                disabled={loading}
-              >
-                <Edit2 size={13} /> Edit
-              </button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <button className="btn btn-primary flex items-center gap-1 text-xs" onClick={saveHours}>
-                  <Check size={13} /> Save
-                </button>
-                <button className="btn btn-ghost text-xs" onClick={cancelHours}>Cancel</button>
-              </div>
-            )}
-          </div>
-          {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <SkeletonField />
-              <SkeletonField />
-              <SkeletonField />
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div>
-                <label style={labelStyle}>Mon - Fri</label>
-                <input
-                  className="glass-input w-full"
-                  value={hoursWeekday}
-                  onChange={(e) => setHoursWeekday(e.target.value)}
-                  readOnly={!editingHours}
-                  style={!editingHours ? { opacity: 0.7 } : {}}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Saturday</label>
-                <input
-                  className="glass-input w-full"
-                  value={hoursSaturday}
-                  onChange={(e) => setHoursSaturday(e.target.value)}
-                  readOnly={!editingHours}
-                  style={!editingHours ? { opacity: 0.7 } : {}}
-                />
-              </div>
-              <div>
-                <label style={labelStyle}>Sunday</label>
-                <input
-                  className="glass-input w-full"
-                  value={hoursSunday}
-                  onChange={(e) => setHoursSunday(e.target.value)}
-                  readOnly={!editingHours}
-                  style={!editingHours ? { opacity: 0.7 } : {}}
-                />
-              </div>
-            </div>
-          )}
+        <div
+          className="rounded-xl p-4"
+          style={{ background: 'rgba(61,255,84,0.06)', border: '1px solid rgba(61,255,84,0.16)' }}
+        >
+          <div className="text-sm font-semibold mb-1" style={{ color: 'var(--t)' }}>Operating Hours</div>
+          <p className="text-xs mb-3" style={{ color: 'var(--t2)' }}>
+            Opening, closing, and break-time setup is managed from one place so gym workout slots stay consistent.
+          </p>
+          <a href="/schedule" className="btn btn-ghost inline-flex text-xs">Manage Operating Hours</a>
         </div>
       </div>
 

@@ -33,14 +33,22 @@ function calcDuration(start: string, end: string | null) {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
+function visitStart(visit: any) {
+  return visit?.checkinTime || visit?.checkedInAt || visit?.createdAt || new Date().toISOString();
+}
+
+function visitEnd(visit: any) {
+  return visit?.checkoutAt || visit?.checkOutTime || visit?.checkedOutAt || null;
+}
+
 function calcStreak(visits: any[]) {
   if (!visits.length) return 0;
-  const sorted = [...visits].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const sorted = [...visits].sort((a, b) => new Date(visitStart(b)).getTime() - new Date(visitStart(a)).getTime());
   let streak = 0;
   let prevDate: Date | null = null;
   for (const v of sorted) {
-    if (v.status !== 'success') continue;
-    const d = new Date(v.createdAt);
+    if (v.status !== 'success' && v.status !== 'checked_out') continue;
+    const d = new Date(visitStart(v));
     d.setHours(0, 0, 0, 0);
     if (!prevDate) { streak = 1; prevDate = d; continue; }
     const diff = (prevDate.getTime() - d.getTime()) / (1000 * 60 * 60 * 24);
@@ -69,7 +77,7 @@ export default function HistoryScreen() {
 
   // Group visits by month
   const grouped = visits.reduce((acc: Record<string, any[]>, v) => {
-    const month = getMonthGroup(v.createdAt);
+    const month = getMonthGroup(visitStart(v));
     if (!acc[month]) acc[month] = [];
     acc[month].push(v);
     return acc;
@@ -124,9 +132,10 @@ export default function HistoryScreen() {
                 const gymName = v.gym?.name || v.gymName || 'Gym';
                 const planName = v.plan?.name || v.planName || '';
                 const isSuccess = v.status === 'success' || v.status === 'checked_out';
-                const duration = calcDuration(v.createdAt, v.checkoutAt);
-                const timeStr = formatTime(v.createdAt);
-                const dateStr = formatDate(v.createdAt);
+                const startTime = visitStart(v);
+                const duration = calcDuration(startTime, visitEnd(v));
+                const timeStr = formatTime(startTime);
+                const dateStr = formatDate(startTime);
                 return (
                   <View key={v.id || v._id || i} style={s.visitCard}>
                     <View style={s.visitIcon}>

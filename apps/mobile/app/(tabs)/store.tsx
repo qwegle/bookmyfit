@@ -136,10 +136,16 @@ export default function Store() {
                   </ImageBackground>
                   <View style={s.cardBody}>
                     <Text style={s.prodName} numberOfLines={1}>{name}</Text>
-                    {!!brand && <Text style={s.prodBrand}>{brand}</Text>}
+                    {!!brand && <Text style={s.prodBrand} numberOfLines={1}>{brand}</Text>}
                     <View style={s.priceRow}>
-                      <Text style={s.prodPrice}>₹{Number(price).toLocaleString('en-IN')}</Text>
-                      <TouchableOpacity style={s.cartBtn} onPress={() => handleAddToCart(p)}>
+                      <Text style={s.prodPrice} numberOfLines={1}>Rs {Number(price).toLocaleString('en-IN')}</Text>
+                      <TouchableOpacity
+                        style={s.cartBtn}
+                        onPress={(event: any) => {
+                          event?.stopPropagation?.();
+                          handleAddToCart(p);
+                        }}
+                      >
                         <IconCart size={14} color={colors.accent} />
                       </TouchableOpacity>
                     </View>
@@ -212,7 +218,7 @@ const s = StyleSheet.create({
   prodName: { fontFamily: fonts.sansBold, fontSize: 13, color: '#fff' },
   prodBrand: { fontFamily: fonts.sans, fontSize: 10, color: colors.t2, marginTop: 2 },
   priceRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
-  prodPrice: { fontFamily: fonts.sansBold, fontSize: 15, color: colors.accent },
+  prodPrice: { flex: 1, minWidth: 0, fontFamily: fonts.sansBold, fontSize: 14, color: colors.accent },
   cartBtn: {
     width: 30, height: 30, borderRadius: 10,
     backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accentBorder,

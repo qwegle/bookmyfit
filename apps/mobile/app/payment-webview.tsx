@@ -7,6 +7,7 @@ import Constants from 'expo-constants';
 import { colors, fonts, radius, spacing } from '../theme/brand';
 import { IconArrowLeft, IconCheck } from '../components/Icons';
 import { subscriptionsApi, api, API_BASE } from '../lib/api';
+import { clearCart } from './cart';
 
 const CASHFREE_BASE_URL: string =
   (Constants.expoConfig?.extra as any)?.cashfreeBaseUrl ?? 'https://sandbox.cashfree.com';
@@ -59,6 +60,18 @@ export default function PaymentWebview() {
       router.replace({
         pathname: '/booking-success',
         params: { bookingId: bookingId || '', orderId, serviceName: serviceName || '', amount: amount || '' },
+      } as any);
+    } else if (returnRoute === 'store') {
+      clearCart();
+      router.replace({
+        pathname: '/success',
+        params: {
+          orderId,
+          planId: 'store_order',
+          planName: 'Store Purchase',
+          amountPaid: amountPaid || amount || String(verifiedSub?.amountPaid || 0),
+          subscriptionId: '',
+        },
       } as any);
     } else {
       router.replace({

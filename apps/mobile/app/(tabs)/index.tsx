@@ -164,7 +164,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/v1/gyms?limit=6`)
+    fetch(`${API_BASE}/api/v1/gyms?status=active&limit=6`)
       .then((r) => r.json())
       .then((data: any) => {
         setHomeGyms(listFrom(data, ['gyms']).slice(0, 6));

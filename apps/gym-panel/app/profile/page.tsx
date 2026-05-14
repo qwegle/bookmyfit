@@ -3,7 +3,7 @@
 import Shell from '../../components/Shell';
 import { api } from '../../lib/api';
 import { useEffect, useState, useRef } from 'react';
-import { Building2, MapPin, Phone, Mail, Globe, Clock, Star, Upload, Check, AlertTriangle } from 'lucide-react';
+import { Building2, MapPin, Phone, Mail, Globe, Star, Upload, Check, AlertTriangle } from 'lucide-react';
 
 interface FormState {
   displayName: string;
@@ -14,28 +14,6 @@ interface FormState {
   phone: string;
   email: string;
   website: string;
-  openingTime: string;
-  closingTime: string;
-  breakStartTime: string;
-  breakEndTime: string;
-}
-
-function formatClockTime(value?: string | null) {
-  if (!value) return '--';
-  const match = String(value).trim().match(/^(\d{1,2}):(\d{2})$/);
-  if (!match) return value;
-
-  const hour = Number(match[1]);
-  const minute = match[2];
-  if (!Number.isFinite(hour) || hour < 0 || hour > 23) return value;
-
-  const suffix = hour >= 12 ? 'PM' : 'AM';
-  const displayHour = hour % 12 || 12;
-  return `${displayHour}:${minute} ${suffix}`;
-}
-
-function formatClockRange(start?: string | null, end?: string | null) {
-  return `${formatClockTime(start)} - ${formatClockTime(end)}`;
 }
 
 export default function ProfilePage() {
@@ -50,10 +28,6 @@ export default function ProfilePage() {
     phone: '',
     email: '',
     website: '',
-    openingTime: '05:00',
-    closingTime: '23:00',
-    breakStartTime: '',
-    breakEndTime: '',
   });
 
   const [gymId, setGymId] = useState('');
@@ -81,10 +55,6 @@ export default function ProfilePage() {
           phone: data.phone || data.contactPhone || '',
           email: data.email || data.contactEmail || '',
           website: data.website || '',
-          openingTime: data.openingTime || '05:00',
-          closingTime: data.closingTime || '23:00',
-          breakStartTime: data.breakStartTime || '',
-          breakEndTime: data.breakEndTime || '',
         });
       } catch (e: any) {
         setError(e?.message || 'Could not load gym profile.');
@@ -109,10 +79,6 @@ export default function ProfilePage() {
         contactPhone: form.phone,
         contactEmail: form.email,
         website: form.website,
-        openingTime: form.openingTime,
-        closingTime: form.closingTime,
-        breakStartTime: form.breakStartTime || null,
-        breakEndTime: form.breakEndTime || null,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -198,16 +164,16 @@ export default function ProfilePage() {
                   <Globe size={14} />
                   <span>{form.website || '--'}</span>
                 </div>
-                <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--t2)' }}>
-                  <Clock size={14} />
-                  <span>Opens: {formatClockTime(form.openingTime)} - Closes: {formatClockTime(form.closingTime)}</span>
-                </div>
-                {form.breakStartTime && form.breakEndTime && (
-                  <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--t2)' }}>
-                    <Clock size={14} />
-                    <span>Break: {formatClockRange(form.breakStartTime, form.breakEndTime)}</span>
+                <div
+                  className="rounded-xl p-3 mt-3"
+                  style={{ background: 'rgba(61,255,84,0.07)', border: '1px solid rgba(61,255,84,0.16)' }}
+                >
+                  <div className="text-xs font-semibold mb-1" style={{ color: 'var(--accent)' }}>Operating hours</div>
+                  <div className="text-xs leading-relaxed" style={{ color: 'var(--t2)' }}>
+                    Opening, closing, and break time are managed from the Operating Hours page.
                   </div>
-                )}
+                  <a href="/schedule" className="btn btn-ghost inline-flex mt-3 text-xs">Manage Hours</a>
+                </div>
               </div>
             </>
           )}
@@ -219,7 +185,7 @@ export default function ProfilePage() {
 
           {loading ? (
             <div className="space-y-4">
-              {[1, 2, 3, 4, 5, 6, 7].map(i => (
+              {[1, 2, 3, 4, 5].map(i => (
                 <div key={i} className="h-10 rounded-xl animate-pulse" style={{ background: 'var(--surface)' }} />
               ))}
             </div>
@@ -333,57 +299,6 @@ export default function ProfilePage() {
                   onChange={handleChange('website')}
                   placeholder="www.yourgym.com"
                 />
-              </div>
-
-              {/* Opening Time + Closing Time */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--t2)' }}>
-                    Opening Time
-                  </label>
-                  <input
-                    className="glass-input w-full"
-                    type="time"
-                    value={form.openingTime}
-                    onChange={handleChange('openingTime')}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--t2)' }}>
-                    Closing Time
-                  </label>
-                  <input
-                    className="glass-input w-full"
-                    type="time"
-                    value={form.closingTime}
-                    onChange={handleChange('closingTime')}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--t2)' }}>
-                    Break Start
-                  </label>
-                  <input
-                    className="glass-input w-full"
-                    type="time"
-                    value={form.breakStartTime}
-                    onChange={handleChange('breakStartTime')}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--t2)' }}>
-                    Break End
-                  </label>
-                  <input
-                    className="glass-input w-full"
-                    type="time"
-                    value={form.breakEndTime}
-                    onChange={handleChange('breakEndTime')}
-                  />
-                </div>
               </div>
 
               {/* Save Button */}

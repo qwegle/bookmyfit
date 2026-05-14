@@ -16,7 +16,7 @@ const MAP_H = H * 0.52;
 
 interface NearbyGym {
   id: string; name: string; address?: string; city?: string;
-  latitude?: number; longitude?: number;
+  latitude?: number; longitude?: number; lat?: number; lng?: number;
   rating?: number; tier?: string; minPrice?: number;
 }
 
@@ -31,6 +31,16 @@ function toScreen(lat: number, lng: number) {
   const x = ((lng - MIN_LNG) / (MAX_LNG - MIN_LNG)) * (W - 60) + 16;
   const y = ((MAX_LAT - lat) / (MAX_LAT - MIN_LAT)) * (MAP_H - 80) + 24;
   return { x, y };
+}
+
+function gymLat(gym: NearbyGym) {
+  const num = Number(gym.lat ?? gym.latitude);
+  return Number.isFinite(num) && num !== 0 ? num : null;
+}
+
+function gymLng(gym: NearbyGym) {
+  const num = Number(gym.lng ?? gym.longitude);
+  return Number.isFinite(num) && num !== 0 ? num : null;
 }
 
 export default function NearbyScreen() {
@@ -56,10 +66,11 @@ export default function NearbyScreen() {
       setUserPos(toScreen(lat, lng));
 
       try {
-        const res = await fetch(`${API_BASE}/api/v1/gyms?limit=20`);
+        const res = await fetch(`${API_BASE}/api/v1/gyms?status=active&limit=20`);
         if (res.ok) {
           const data = await res.json();
-          const items: NearbyGym[] = (data.items || data || []).filter((g: NearbyGym) => g.latitude && g.longitude);
+          const list = Array.isArray(data) ? data : data?.data || data?.gyms || data?.items || [];
+          const items: NearbyGym[] = list.filter((g: NearbyGym) => gymLat(g) !== null && gymLng(g) !== null);
           setGyms(items);
           setError(null);
         } else {
@@ -114,8 +125,10 @@ export default function NearbyScreen() {
 
         {/* Gym pins */}
         {!loading && gyms.map((gym) => {
-          if (!gym.latitude || !gym.longitude) return null;
-          const { x, y } = toScreen(gym.latitude, gym.longitude);
+          const lat = gymLat(gym);
+          const lng = gymLng(gym);
+          if (lat === null || lng === null) return null;
+          const { x, y } = toScreen(lat, lng);
           const tc = TIER_COLORS[gym.tier || 'individual'] ?? colors.accent;
           const sel = selectedId === gym.id;
           return (

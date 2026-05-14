@@ -20,7 +20,7 @@ type CartItem = {
   category?: string;
 };
 
-// In-memory cart store — shared across screens via module-level state
+// In-memory cart store shared across screens via module-level state
 export let cartItems: CartItem[] = [];
 export function addToCart(item: Omit<CartItem, 'quantity'> & { quantity?: number }) {
   const existing = cartItems.find((c) => c.productId === item.productId);
@@ -52,7 +52,9 @@ export default function CartScreen() {
     }, []),
   );
 
-  const total = items.reduce((acc, c) => acc + c.price * c.quantity, 0);
+  const subtotal = items.reduce((acc, c) => acc + c.price * c.quantity, 0);
+  const delivery = subtotal > 0 && subtotal <= 1000 ? 70 : 0;
+  const total = subtotal + delivery;
 
   const handleRemove = (productId: string) => {
     removeFromCart(productId);
@@ -78,8 +80,6 @@ export default function CartScreen() {
         user?.phone || user?.phoneNumber || '',
       );
       const { order, payment } = res;
-      clearCart();
-      setItems([]);
       // Route through payment webview (Cashfree or mock)
       router.replace({
         pathname: '/payment-webview',
@@ -88,7 +88,8 @@ export default function CartScreen() {
           orderId: payment?.orderId || payment?.order_id || order?.cashfreeOrderId || order?.id || '',
           returnRoute: 'store',
           serviceName: `Order #${String(order?.id || '').slice(0, 8).toUpperCase()}`,
-          amount: String(order?.totalAmount || 0),
+          amount: String(order?.totalAmount || total),
+          amountPaid: String(order?.totalAmount || total),
         },
       } as any);
     } catch (e: any) {
@@ -117,7 +118,7 @@ export default function CartScreen() {
             <IconCart size={48} color={colors.t3} />
             <Text style={s.emptyTitle}>Your cart is empty</Text>
             <Text style={s.emptySub}>Browse our store and add items to get started</Text>
-            <TouchableOpacity style={s.browsBtn} onPress={() => router.push('/(tabs)/explore' as any)}>
+            <TouchableOpacity style={s.browsBtn} onPress={() => router.push('/(tabs)/store' as any)}>
               <Text style={s.browsBtnText}>Browse Store</Text>
             </TouchableOpacity>
           </View>
@@ -133,7 +134,7 @@ export default function CartScreen() {
                   <View style={s.cardInfo}>
                     <Text style={s.cardName} numberOfLines={2}>{item.name}</Text>
                     {item.category && <Text style={s.cardCat}>{item.category}</Text>}
-                    <Text style={s.cardPrice}>₹{(item.price * item.quantity).toLocaleString()}</Text>
+                    <Text style={s.cardPrice}>Rs {(item.price * item.quantity).toLocaleString('en-IN')}</Text>
                     <View style={s.qtyRow}>
                       <TouchableOpacity style={s.qtyBtn} onPress={() => handleChangeQty(item.productId, -1)}>
                         <Text style={s.qtyBtnText}>−</Text>
@@ -155,15 +156,17 @@ export default function CartScreen() {
             <View style={[s.summary, { paddingBottom: bottomInset + 14 }]}>
               <View style={s.summaryRow}>
                 <Text style={s.summaryLabel}>Subtotal ({items.length} item{items.length !== 1 ? 's' : ''})</Text>
-                <Text style={s.summaryValue}>₹{total.toLocaleString()}</Text>
+                <Text style={s.summaryValue}>Rs {subtotal.toLocaleString('en-IN')}</Text>
               </View>
               <View style={s.summaryRow}>
                 <Text style={s.summaryLabel}>Delivery</Text>
-                <Text style={[s.summaryValue, { color: colors.accent }]}>FREE</Text>
+                <Text style={[s.summaryValue, { color: colors.accent }]}>
+                  {delivery > 0 ? `Rs ${delivery.toLocaleString('en-IN')}` : 'FREE'}
+                </Text>
               </View>
               <View style={[s.summaryRow, s.totalRow]}>
                 <Text style={s.totalLabel}>Total</Text>
-                <Text style={s.totalValue}>₹{total.toLocaleString()}</Text>
+                <Text style={s.totalValue}>Rs {total.toLocaleString('en-IN')}</Text>
               </View>
               <TouchableOpacity
                 style={[s.checkoutBtn, placing && { opacity: 0.6 }]}

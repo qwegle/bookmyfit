@@ -38,8 +38,19 @@ function SkeletonRow() {
 
 function StatusBadge({ status }: { status: string }) {
   if (status === 'active' || status === 'approved') return <span className="badge-active">Approved</span>;
+  if (status === 'in_review') return <span className="badge-pending">In Review</span>;
   if (status === 'rejected') return <span className="badge-danger">Rejected</span>;
   return <span className="badge-pending">Pending</span>;
+}
+
+function latestSubmittedAt(gym: Gym) {
+  const dates = (gym.kycDocuments || [])
+    .map((doc) => doc.uploadedAt)
+    .filter(Boolean)
+    .map((date) => new Date(String(date)).getTime())
+    .filter((time) => Number.isFinite(time));
+  const latest = dates.length ? Math.max(...dates) : (gym.createdAt ? new Date(gym.createdAt).getTime() : NaN);
+  return Number.isFinite(latest) ? new Date(latest).toLocaleDateString() : '—';
 }
 
 export default function KYCPage() {
@@ -55,7 +66,7 @@ export default function KYCPage() {
   const load = async (status?: string) => {
     setLoading(true);
     try {
-      const path = status && status !== 'all' ? `/gyms?status=${status}` : '/gyms';
+      const path = status && status !== 'all' ? `/gyms?kycStatus=${status}&page=1&limit=100` : '/gyms?page=1&limit=100';
       const data = await api.get<any>(path);
       setGyms(Array.isArray(data) ? data : data?.data ?? []);
     } catch {
@@ -66,7 +77,7 @@ export default function KYCPage() {
   };
 
   useEffect(() => {
-    load(tab === 'approved' ? 'active' : tab);
+    load(tab === 'pending' ? 'in_review' : tab);
   }, [tab]);
 
   const handleApprove = async (id: string) => {
@@ -98,9 +109,9 @@ export default function KYCPage() {
     }
   };
 
-  const pending = gyms.filter((g) => g.status === 'pending').length;
-  const approved = gyms.filter((g) => g.status === 'active' || g.status === 'approved').length;
-  const rejected = gyms.filter((g) => g.status === 'rejected').length;
+  const pending = gyms.filter((g) => (g.kycStatus || g.status) === 'in_review').length;
+  const approved = gyms.filter((g) => (g.kycStatus || g.status) === 'approved').length;
+  const rejected = gyms.filter((g) => (g.kycStatus || g.status) === 'rejected').length;
 
   const TABS: { key: FilterTab; label: string }[] = [
     { key: 'pending', label: 'Pending' },
@@ -188,12 +199,12 @@ export default function KYCPage() {
                         </span>
                       </td>
                       <td style={{ color: 'var(--t2)', fontSize: 12 }}>
-                        {g.createdAt ? new Date(g.createdAt).toLocaleDateString() : '—'}
+                        {latestSubmittedAt(g)}
                       </td>
-                      <td><StatusBadge status={g.status} /></td>
+                      <td><StatusBadge status={g.kycStatus || g.status} /></td>
                       <td>
                         <div className="flex items-center gap-2">
-                          {g.status === 'pending' && (
+                          {(g.kycStatus === 'in_review' || g.status === 'pending') && (
                             <>
                               <button
                                 onClick={() => handleApprove(g.id)}

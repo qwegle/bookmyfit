@@ -44,7 +44,7 @@ export default function AdminDashboard() {
   }, []);
 
   const totalGyms = gyms.length || summary?.totalGyms || 0;
-  const pendingGyms = gyms.filter((g: any) => g.status === 'pending').length;
+  const pendingGyms = gyms.filter((g: any) => g.kycStatus === 'in_review').length || summary?.pendingKyc || 0;
   const activeGyms = gyms.filter((g: any) => g.status === 'active').length;
 
   const stats = [

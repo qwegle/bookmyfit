@@ -194,6 +194,15 @@ export class SessionsService {
         await this.scheduleRepo.save(this.scheduleRepo.create({ gymId, dayOfWeek: day.dayOfWeek, ...patch }));
       }
     }
+    const firstOpen = dto.days.find((day) => day.isOpen) || dto.days[0];
+    if (firstOpen) {
+      await this.gymRepo.update(gymId, {
+        openingTime: firstOpen.openTime,
+        closingTime: firstOpen.closeTime,
+        breakStartTime: firstOpen.breakStartTime || null,
+        breakEndTime: firstOpen.breakEndTime || null,
+      });
+    }
     await this.removeFutureStandardSlotsBlockedBySchedule(gymId);
     await this.generateSlotsForGym(gymId, 30);
     return this.getSchedule(gymId);

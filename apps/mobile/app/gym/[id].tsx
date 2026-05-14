@@ -1,7 +1,7 @@
 import { ScrollView, View, Text, StyleSheet, TouchableOpacity, ImageBackground, Dimensions, Share, Linking } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useLocalSearchParams, router } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
+import { useState, useEffect, useCallback } from 'react';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { colors, fonts, radius } from '../../theme/brand';
@@ -27,6 +27,13 @@ const TIER_AURORA: Record<string, string> = {
   Premium: 'rgba(155,0,255,0.22)',
   Standard: 'rgba(255,138,0,0.18)',
 };
+
+function tierLabel(value: any): 'Elite' | 'Premium' | 'Standard' {
+  const key = String(value || '').toLowerCase();
+  if (key.includes('elite') || key.includes('corporate')) return 'Elite';
+  if (key.includes('premium')) return 'Premium';
+  return 'Standard';
+}
 
 function AmenityIcon({ label }: { label: string }) {
   const value = label.toLowerCase();
@@ -96,6 +103,14 @@ function formatClockRange(start?: any, end?: any, fallback?: any) {
   return text;
 }
 
+function coordinate(...values: any[]): number | null {
+  for (const value of values) {
+    const num = Number(value);
+    if (Number.isFinite(num) && num !== 0) return num;
+  }
+  return null;
+}
+
 function SkeletonRect({ h, style }: { h: number; style?: any }) {
   return <View style={[{ height: h, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.07)' }, style]} />;
 }
@@ -103,7 +118,14 @@ function SkeletonRect({ h, style }: { h: number; style?: any }) {
 export default function GymDetail() {
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 34);
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, fallbackName, fallbackAddress, fallbackRating, fallbackTier, fallbackImg } = useLocalSearchParams<{
+    id: string;
+    fallbackName?: string;
+    fallbackAddress?: string;
+    fallbackRating?: string;
+    fallbackTier?: string;
+    fallbackImg?: string;
+  }>();
   const [gym, setGym] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'About' | 'Sessions' | 'Trainers' | 'Reviews'>('About');
@@ -117,23 +139,44 @@ export default function GymDetail() {
   const [slotDate, setSlotDate] = useState<string>(new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().split('T')[0]);
   const [bookingLoading, setBookingLoading] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!id) return;
-    setLoading(true);
-    gymsApi.getById(id as string)
-      .then((data: any) => {
-        const g = data?.gym || data;
-        setGym(g && (g.id || g._id) ? g : null);
-      })
-      .catch(() => setGym(null))
-      .finally(() => setLoading(false));
+  const fallbackGym = useCallback(() => {
+    if (!id) return null;
+    const image = typeof fallbackImg === 'string' && fallbackImg.trim() ? fallbackImg : null;
+    return {
+      id: String(id),
+      name: fallbackName || 'Gym',
+      address: fallbackAddress || '',
+      rating: positiveNumber(fallbackRating) || 0,
+      tier: fallbackTier || 'Standard',
+      coverPhoto: image,
+      photos: image ? [image] : [],
+    };
+  }, [id, fallbackName, fallbackAddress, fallbackRating, fallbackTier, fallbackImg]);
 
+  const loadSubscriptionAccess = useCallback(() => {
+    if (!id) return;
     subscriptionsApi.mySubscriptions()
       .then((data: any) => {
         const access = getActiveSubscriptionAccess(normalizeSubscriptionList(data));
         setActiveSub(access.byGymId.get(String(id)) || access.multiGymSub || null);
       })
       .catch(() => setActiveSub(null));
+  }, [id]);
+
+  useFocusEffect(useCallback(() => {
+    loadSubscriptionAccess();
+  }, [loadSubscriptionAccess]));
+
+  useEffect(() => {
+    if (!id) return;
+    setLoading(true);
+    gymsApi.getById(id as string)
+      .then((data: any) => {
+        const g = data?.gym || data;
+        setGym(g && (g.id || g._id) ? g : fallbackGym());
+      })
+      .catch(() => setGym(fallbackGym()))
+      .finally(() => setLoading(false));
 
     api.get(`/gym-plans/by-gym/${id}`)
       .then((data: any) => {
@@ -164,12 +207,12 @@ export default function GymDetail() {
         setReviews(list);
       })
       .catch(() => setReviews([]));
-  }, [id]);
+  }, [id, fallbackGym]);
 
-  const tier = gym?.tier || gym?.tierName || 'Standard';
+  const tier = tierLabel(gym?.tier || gym?.tierName || fallbackTier);
   const name = gym?.name || 'Gym';
-  const rating = gym?.rating || gym?.avgRating || '—';
-  const reviewCount = gym?.reviewCount || gym?.ratingsCount || '—';
+  const rating = gym?.rating || gym?.avgRating || '--';
+  const reviewCount = gym?.reviewCount || gym?.ratingsCount || '--';
   const address = gym?.address || gym?.location?.address || '';
   const hours = formatClockRange(gym?.openingTime, gym?.closingTime, gym?.openingHours || gym?.timings || '');
   const breakHours = formatClockRange(gym?.breakStartTime, gym?.breakEndTime, gym?.breakHours || null);
@@ -183,10 +226,10 @@ export default function GymDetail() {
   const activeSubLabel = activeSub ? accessLabelForSubscription(activeSub, activePlanType === 'multi_gym') : '';
   const activeUntil = formatDateLabel(activeSub?.endDate || activeSub?.validUntil);
   const startingMonthlyPrice = minMonthlyPlanPrice(gymPlans);
-  const dayPassPrice = positiveNumber(gym?.dayPassPrice) || positiveNumber(gym?.ratePerDay) || null;
+  const dayPassPrice = positiveNumber(gym?.dayPassPrice) || positiveNumber(gym?.day_pass_price) || null;
 
-  const gymLat: number | null = gym?.latitude || gym?.location?.lat || null;
-  const gymLng: number | null = gym?.longitude || gym?.location?.lng || null;
+  const gymLat = coordinate(gym?.lat, gym?.latitude, gym?.location?.lat);
+  const gymLng = coordinate(gym?.lng, gym?.longitude, gym?.location?.lng);
 
   const getDirections = async () => {
     try {
@@ -351,7 +394,7 @@ export default function GymDetail() {
                   <View key={st.sub} style={s.statCard}>
                     <st.icon size={16} color={colors.accent} />
                     <View>
-                      <Text style={s.statLabel}>{st.label}</Text>
+                      <Text style={s.statLabel} numberOfLines={2}>{st.label || '--'}</Text>
                       <Text style={s.statSub}>{st.sub}</Text>
                     </View>
                   </View>
@@ -467,7 +510,7 @@ export default function GymDetail() {
                             <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: stColor, marginRight: 7 }} />
                             <Text style={[s.slotTypeName, { color: stColor }]}>{typeName.toUpperCase()}</Text>
                             <View style={{ flex: 1 }} />
-                            <Text style={s.slotTime}>{slot.startTime} – {slot.endTime}</Text>
+                            <Text style={s.slotTime}>{formatClockRange(slot.startTime, slot.endTime)}</Text>
                           </View>
                           {/* Instructor + duration */}
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 }}>
@@ -607,10 +650,10 @@ export default function GymDetail() {
                           <Text style={s.trainerInitial}>{(t.name || 'T')[0]}</Text>
                         </View>
                         <View style={{ flex: 1 }}>
-                          <Text style={s.trainerName}>{t.name}</Text>
+                          <Text style={s.trainerName} numberOfLines={1}>{t.name}</Text>
                           <Text style={s.trainerSessions}>{t.specialization || t.specialty || 'Personal training'}</Text>
                         </View>
-                        <Text style={s.trainerPrice}>
+                        <Text style={s.trainerPrice} numberOfLines={1}>
                           Rs {Number(t.monthlyPriceInr || t.monthlyPrice || t.pricePerSession || 0).toLocaleString('en-IN')}/mo
                         </Text>
                       </View>
@@ -752,13 +795,13 @@ const s = StyleSheet.create({
   },
   activePassTitle: { fontFamily: fonts.sansBold, fontSize: 13, color: colors.accent },
   activePassText: { fontFamily: fonts.sans, fontSize: 12, color: colors.t, marginTop: 2, lineHeight: 17 },
-  statsRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 16 },
   statCard: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10,
+    flexGrow: 1, flexBasis: '47%', minWidth: 145, flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: colors.glass, borderWidth: 1, borderColor: colors.borderGlass,
     borderRadius: radius.xl, padding: 12,
   },
-  statLabel: { fontFamily: fonts.sansBold, fontSize: 13, color: '#fff' },
+  statLabel: { fontFamily: fonts.sansBold, fontSize: 12, color: '#fff', lineHeight: 16 },
   statSub: { fontFamily: fonts.sans, fontSize: 10, color: colors.t2 },
   tabRow: { flexDirection: 'row', gap: 8, marginTop: 20, marginBottom: 4 },
   tabBtn: {
@@ -830,7 +873,7 @@ const s = StyleSheet.create({
   trainerInitial: { fontFamily: fonts.sansBold, fontSize: 16, color: colors.accent },
   trainerName: { fontFamily: fonts.sansBold, fontSize: 14, color: '#fff' },
   trainerSessions: { fontFamily: fonts.sans, fontSize: 10, color: colors.t2, marginTop: 2 },
-  trainerPrice: { fontFamily: fonts.sansBold, fontSize: 13, color: colors.accent },
+  trainerPrice: { maxWidth: 96, fontFamily: fonts.sansBold, fontSize: 13, color: colors.accent },
   reviewCard: {
     backgroundColor: colors.glass, borderWidth: 1, borderColor: colors.borderGlass,
     borderRadius: radius.xl, padding: 14, marginBottom: 10,

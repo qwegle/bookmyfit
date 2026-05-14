@@ -9,6 +9,7 @@ import { router } from 'expo-router';
 import { colors, fonts, radius } from '../theme/brand';
 import { IconArrowLeft, IconPlay, IconLock, IconClock } from '../components/Icons';
 import { miscApi } from '../lib/api';
+import { DEFAULT_HOMEPAGE_HERO_IMAGE, firstImage } from '../lib/imageFallbacks';
 
 const { width } = Dimensions.get('window');
 const CARD_W = (width - 48) / 2;
@@ -36,7 +37,7 @@ export default function Videos() {
         duration: v.duration || (v.durationSeconds ? `${Math.floor(v.durationSeconds / 60)} min` : '--'),
         instructor: v.instructor || v.instructorName || '--',
         category: v.category || v.type || 'General',
-        thumb: v.thumb || v.thumbnail || v.thumbnailUrl || '',
+        thumb: firstImage(v.thumb, v.thumbnail, v.thumbnailUrl, v.imageUrl, v.coverImage) || DEFAULT_HOMEPAGE_HERO_IMAGE,
         premium: v.premium || v.isPremium || false,
       })));
     } catch (e: any) {
@@ -51,7 +52,7 @@ export default function Videos() {
     if (filter === 'All') return true;
     if (filter === 'Free') return !v.premium;
     if (filter === 'Premium') return v.premium;
-    return v.category === filter;
+    return String(v.category || '').toLowerCase() === filter.toLowerCase();
   });
 
   const handleVideoPress = (video: any) => {
@@ -106,7 +107,7 @@ export default function Videos() {
             </View>
           ) : filtered.map((video) => (
             <TouchableOpacity key={video.id} style={s.videoCard} onPress={() => handleVideoPress(video)} activeOpacity={0.85}>
-              <ImageBackground source={video.thumb ? { uri: video.thumb } : undefined as any} style={s.thumb} imageStyle={{ borderRadius: radius.lg }}>
+              <ImageBackground source={{ uri: video.thumb || DEFAULT_HOMEPAGE_HERO_IMAGE }} style={s.thumb} imageStyle={{ borderRadius: radius.lg }}>
                 <View style={s.thumbOverlay} />
                 <View style={s.durationBadge}>
                   <IconClock size={10} color="#fff" />

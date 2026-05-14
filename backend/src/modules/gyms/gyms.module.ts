@@ -432,10 +432,11 @@ class GymsService {
     return { count: recent.length, recent };
   }
 
-  async list(filter: { city?: string; status?: string; search?: string; tier?: string; category?: string } = {}, page: any = 1, limit: any = 20) {
+  async list(filter: { city?: string; status?: string; kycStatus?: string; search?: string; tier?: string; category?: string } = {}, page: any = 1, limit: any = 20) {
     const qb = this.safeGymQuery('g');
     if (filter.city) qb.andWhere('g.city = :city', { city: filter.city });
     if (filter.status) qb.andWhere('g.status = :status', { status: filter.status });
+    if (filter.kycStatus) qb.andWhere('g."kycStatus" = :kycStatus', { kycStatus: filter.kycStatus });
     if (filter.search) qb.andWhere('g.name ILIKE :search', { search: `%${filter.search}%` });
     if (filter.tier) {
       // Map mobile display names to DB enum values
@@ -449,8 +450,9 @@ class GymsService {
     }
     if (filter.category) qb.andWhere(':category = ANY(g.categories)', { category: filter.category });
     const { skip, take, page: p, limit: l } = paginate(page, limit);
+    const orderColumn = filter.kycStatus ? 'g.updatedAt' : 'g.rating';
     const [data, total] = await Promise.all([
-      qb.clone().orderBy('g.rating', 'DESC').skip(skip).take(take).getRawMany(),
+      qb.clone().orderBy(orderColumn, 'DESC').skip(skip).take(take).getRawMany(),
       qb.clone().getCount(),
     ]);
     return paginatedResponse(data.map((row) => this.normalizeGym(row)), total, p, l);
@@ -661,13 +663,14 @@ class GymsController {
   @Get() list(
     @Query('city') city?: string,
     @Query('status') status?: string,
+    @Query('kycStatus') kycStatus?: string,
     @Query('search') search?: string,
     @Query('tier') tier?: string,
     @Query('category') category?: string,
     @Query('page') page = 1,
     @Query('limit') limit = 20,
   ) {
-    return this.svc.list({ city, status, search, tier, category }, +page, +limit);
+    return this.svc.list({ city, status, kycStatus, search, tier, category }, +page, +limit);
   }
   @Get('recommended') @UseGuards(JwtAuthGuard)
   recommended(@Req() req: any) { return this.svc.getRecommended(req.user.userId); }

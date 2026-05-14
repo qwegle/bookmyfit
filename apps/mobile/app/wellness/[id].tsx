@@ -43,14 +43,13 @@ export default function WellnessDetailScreen() {
     setLoading(true);
     setError('');
     Promise.all([
-      api.get(`/wellness/partners?limit=100`).catch((e) => {
+      api.get(`/wellness/partners/${id}`).catch((e) => {
         setError(e?.message || 'Could not load wellness partner.');
         return null;
       }),
       api.get(`/wellness/partners/${id}/services`).catch(() => []),
     ]).then(([pRes, svcs]) => {
-      const all: Partner[] = pRes?.data || (Array.isArray(pRes) ? pRes : []);
-      setPartner(all.find((p: Partner) => String(p.id) === String(id)) || null);
+      setPartner(pRes?.partner || pRes || null);
       setServices(Array.isArray(svcs) ? svcs : (svcs?.data || []));
     }).finally(() => setLoading(false));
   }, [id]);
@@ -113,11 +112,11 @@ export default function WellnessDetailScreen() {
                 <View style={s.heroMetaRow}>
                   <View style={s.heroMetaChip}>
                     <IconStar size={13} color={colors.star} />
-                    <Text style={s.heroMetaText}>{partner.rating ? partner.rating.toFixed(1) : '--'} ({partner.reviewCount ?? 0})</Text>
+                    <Text style={s.heroMetaText} numberOfLines={1}>{partner.rating ? partner.rating.toFixed(1) : '--'} ({partner.reviewCount ?? 0})</Text>
                   </View>
                   <View style={s.heroMetaChip}>
                     <IconPin size={13} color={colors.accent} />
-                    <Text style={s.heroMetaText}>{[partner.area, partner.city].filter(Boolean).join(', ') || 'Location not added'}</Text>
+                    <Text style={s.heroMetaText} numberOfLines={1}>{[partner.area, partner.city].filter(Boolean).join(', ') || 'Location not added'}</Text>
                   </View>
                 </View>
               </View>
@@ -183,9 +182,9 @@ export default function WellnessDetailScreen() {
                             serviceId: svc.id,
                             partnerId: id,
                             serviceName: svc.name,
-                            price: svc.price,
+                            price: String(svc.price),
                             originalPrice: svc.originalPrice ?? '',
-                            duration: svc.durationMinutes,
+                            duration: String(svc.durationMinutes),
                           },
                         } as any)}
                       >
@@ -216,8 +215,8 @@ const s = StyleSheet.create({
   discountBadgeText: { fontFamily: fonts.sansBold, fontSize: 11, color: '#060606' },
   heroName: { fontFamily: fonts.serif, fontSize: 31, color: '#fff', lineHeight: 36 },
   heroMetaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  heroMetaChip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.12)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
-  heroMetaText: { fontFamily: fonts.sansMedium, fontSize: 12, color: '#fff' },
+  heroMetaChip: { maxWidth: '100%', flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(255,255,255,0.12)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
+  heroMetaText: { flexShrink: 1, fontFamily: fonts.sansMedium, fontSize: 12, color: '#fff' },
   statsRow: { flexDirection: 'row', marginHorizontal: 16, marginTop: -20, borderRadius: radius.xl, overflow: 'hidden', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
   statChip: { flex: 1, paddingVertical: 14, alignItems: 'center' },
   statChipMiddle: { borderLeftWidth: 1, borderRightWidth: 1, borderColor: colors.border },
@@ -234,7 +233,7 @@ const s = StyleSheet.create({
   svcImg: { width: 86, height: 104, borderRadius: radius.md, backgroundColor: colors.bg },
   svcBody: { flex: 1 },
   svcName: { fontFamily: fonts.sansBold, fontSize: 15, color: '#fff', marginBottom: 8 },
-  svcBadgeRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  svcBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 8 },
   svcCatBadge: { backgroundColor: colors.accentSoft, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
   svcCatText: { fontFamily: fonts.sansBold, fontSize: 10, color: colors.accent },
   svcDurBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.glass, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },

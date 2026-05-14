@@ -4,7 +4,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { colors, fonts, radius } from '../theme/brand';
 import { IconArrowLeft, IconStar, IconPin, IconFilter, IconCheck, IconSearch } from '../components/Icons';
@@ -29,8 +29,8 @@ const CATS = [
 const SORTS = [
   { id: 'rating',    label: 'Top Rated' },
   { id: 'distance',  label: 'Nearest' },
-  { id: 'price_asc', label: 'Price: Low → High' },
-  { id: 'price_desc',label: 'Price: High → Low' },
+  { id: 'price_asc', label: 'Price: Low to High' },
+  { id: 'price_desc',label: 'Price: High to Low' },
 ];
 
 function Sk({ h, br = 12, style }: { h: number; br?: number; style?: any }) {
@@ -71,7 +71,7 @@ export default function GymListingPage() {
     else setLoadingMore(true); // category switch: spinner, keep existing list
     try {
       setLoadError('');
-      const params: any = { page: pg, limit: 50 }; // fetch more so local filter has data
+      const params: any = { page: pg, limit: 50, status: 'active' }; // fetch more so local filter has data
       const res: any = await gymsApi.list(params);
       const raw = Array.isArray(res) ? res : res?.gyms || res?.data || [];
       const list = filterByCat(raw, cat);
@@ -94,6 +94,10 @@ export default function GymListingPage() {
   }, [activeCategory]);
 
   useEffect(() => {
+    if (paramCat && paramCat !== activeCategory) setActiveCategory(paramCat);
+  }, [paramCat, activeCategory]);
+
+  const loadSubscriptionAccess = useCallback(() => {
     subscriptionsApi.mySubscriptions()
       .then((data: any) => {
         const state = getActiveSubscriptionAccess(normalizeSubscriptionList(data));
@@ -109,6 +113,10 @@ export default function GymListingPage() {
         setHasMultiGymSub(false);
       });
   }, []);
+
+  useFocusEffect(useCallback(() => {
+    loadSubscriptionAccess();
+  }, [loadSubscriptionAccess]));
 
   const loadMore = () => {
     if (!loadingMore && hasMore) {
@@ -175,7 +183,7 @@ export default function GymListingPage() {
         </View>
         <TouchableOpacity style={s.sortBtn} onPress={() => setShowSortSheet(true)}>
           <IconFilter size={13} color={colors.t2} />
-          <Text style={s.sortBtnText}>{activeSortLabel}</Text>
+          <Text style={s.sortBtnText} numberOfLines={1}>{activeSortLabel}</Text>
         </TouchableOpacity>
       </View>
 
@@ -290,7 +298,7 @@ function GymCard({
   const distance = gym.distance || (gym.distanceKm ? `${gym.distanceKm} km` : '');
   const city     = gym.city || gym.location?.city || '';
   const img      = firstImage(gym.images, gym.photos, gym.coverImage, gym.coverPhoto, gym.img) || DEFAULT_GYM_IMAGE;
-  const price    = gym.dayPassPrice || gym.day_pass_price || '—';
+  const dayPassPrice = positiveNumber(gym.dayPassPrice || gym.day_pass_price);
   const discount = gym.discount || null;
   const tags: string[] = (gym.amenities || gym.tags || []).slice(0, 3);
   const gid = gym.id || gym._id;
@@ -308,6 +316,7 @@ function GymCard({
           fallbackRating: rating,
           fallbackAddress: gym.address || gym.location?.address || city,
           fallbackTier: gym.tier || gym.tierName || 'Elite',
+          fallbackImg: img,
         },
       } as any)}
       activeOpacity={0.88}
@@ -346,8 +355,14 @@ function GymCard({
 
         <View style={s.cardFooter}>
           <View>
-            <Text style={s.fromLabel}>Day pass from</Text>
-            <Text style={s.fromPrice}>₹{price}<Text style={s.fromPer}>/day</Text></Text>
+            <Text style={s.fromLabel}>{hasAccess ? 'Membership' : (dayPassPrice ? 'Day pass from' : 'Membership')}</Text>
+            <Text style={s.fromPrice} numberOfLines={1}>
+              {hasAccess
+                ? 'Active'
+                : dayPassPrice
+                  ? `Rs ${Math.round(dayPassPrice).toLocaleString('en-IN')}/day`
+                  : 'Plans'}
+            </Text>
           </View>
           <TouchableOpacity
             style={[s.viewBtn, hasAccess && s.bookBtn]}
@@ -357,12 +372,17 @@ function GymCard({
               else router.push({ pathname: '/plans', params: { gymId: gid, gymName: name } } as any);
             }}
           >
-            <Text style={[s.viewBtnText, hasAccess && s.bookBtnText]}>{hasAccess ? 'Book Slot' : 'View Plans'}</Text>
+            <Text style={[s.viewBtnText, hasAccess && s.bookBtnText]} numberOfLines={1}>{hasAccess ? 'Book' : 'Plans'}</Text>
           </TouchableOpacity>
         </View>
       </View>
     </TouchableOpacity>
   );
+}
+
+function positiveNumber(value: any): number | null {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? num : null;
 }
 
 const s = StyleSheet.create({
@@ -412,7 +432,7 @@ const s = StyleSheet.create({
   discountText:  { fontFamily: fonts.sansBold, fontSize: 8, color: '#060606' },
   subscribedThumbBadge: { position: 'absolute', left: 6, bottom: 6, backgroundColor: 'rgba(0,0,0,0.68)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: 'rgba(0,212,106,0.45)' },
   subscribedThumbText: { fontFamily: fonts.sansBold, fontSize: 8, color: colors.accent },
-  gymInfo:  { flex: 1, justifyContent: 'space-between' },
+  gymInfo:  { flex: 1, minWidth: 0, justifyContent: 'space-between' },
   nameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
   gymName:  { flex: 1, fontFamily: fonts.sansBold, fontSize: 14, color: '#fff', marginBottom: 4 },
   subscribedBadge: {
@@ -427,11 +447,11 @@ const s = StyleSheet.create({
   tagsRow:  { flexDirection: 'row', gap: 5, flexWrap: 'wrap', marginBottom: 6 },
   tag:      { backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
   tagText:  { fontFamily: fonts.sansMedium, fontSize: 9, color: colors.t2 },
-  cardFooter: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
+  cardFooter: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 },
   fromLabel: { fontFamily: fonts.sans, fontSize: 8, color: colors.t2 },
-  fromPrice: { fontFamily: fonts.sansBold, fontSize: 15, color: colors.accent },
+  fromPrice: { fontFamily: fonts.sansBold, fontSize: 15, color: colors.accent, maxWidth: 118 },
   fromPer:   { fontFamily: fonts.sans, fontSize: 9, color: colors.t2 },
-  viewBtn:  { backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 12, paddingVertical: 6 },
+  viewBtn:  { minWidth: 62, alignItems: 'center', backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6 },
   viewBtnText: { fontFamily: fonts.sansBold, fontSize: 11, color: '#060606' },
   bookBtn: { backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accentBorder },
   bookBtnText: { color: colors.accent },

@@ -56,9 +56,13 @@ function TimeInput({ value, onChange }: { value: string; onChange: (v: string) =
       onChange={(e) => onChange(e.target.value)}
       style={{
         background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)',
-        borderRadius: 8, color: '#fff', padding: '6px 12px',
+        borderRadius: 8, color: '#fff', padding: '8px 10px',
         fontFamily: 'DM Sans, sans-serif', fontSize: 14,
         colorScheme: 'dark',
+        width: 112,
+        maxWidth: '100%',
+        minWidth: 0,
+        boxSizing: 'border-box',
       }}
     />
   );
@@ -104,7 +108,7 @@ export default function SchedulePage() {
 
   return (
     <Shell title="Operating Hours">
-      <div style={{ maxWidth: 720, margin: '0 auto' }}>
+      <div style={{ maxWidth: 980, margin: '0 auto' }}>
         {/* Header */}
         <div className="glass" style={{ borderRadius: 20, padding: 28, marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
@@ -146,18 +150,18 @@ export default function SchedulePage() {
                 borderColor: day.isOpen ? 'rgba(61,255,84,0.18)' : 'rgba(255,255,255,0.06)',
                 transition: 'opacity 0.2s',
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{ display: 'flex', alignItems: day.isOpen ? 'flex-start' : 'center', gap: 16, flexWrap: 'wrap' }}>
                   {/* Day name + toggle */}
-                  <div style={{ width: 110, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 120, display: 'flex', alignItems: 'center', gap: 10, paddingTop: day.isOpen ? 24 : 0 }}>
                     <Toggle on={day.isOpen} onChange={(v) => update(i, { isOpen: v })} />
                     <span style={{ fontFamily: 'DM Sans, sans-serif', fontWeight: 600, fontSize: 14, color: day.isOpen ? '#fff' : 'rgba(255,255,255,0.4)' }}>
-                      {day.label.substring(0, 3)}
+                      {day.label}
                     </span>
                   </div>
 
                   {/* Time pickers */}
                   {day.isOpen ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: '1 1 620px', flexWrap: 'wrap', minWidth: 0 }}>
                       <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', minWidth: 40 }}>Opens</span>
                       <TimeInput value={day.openTime} onChange={(v) => update(i, { openTime: v })} />
                       <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>→</span>

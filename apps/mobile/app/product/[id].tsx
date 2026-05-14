@@ -228,9 +228,9 @@ export default function ProductDetail() {
 
             {/* Price row */}
             <View style={s.priceRow}>
-              <Text style={s.price}>₹{Number(price).toLocaleString('en-IN')}</Text>
+              <Text style={s.price} numberOfLines={1}>Rs {Number(price).toLocaleString('en-IN')}</Text>
               {!!originalPrice && originalPrice > price && (
-                <Text style={s.originalPrice}>₹{Number(originalPrice).toLocaleString('en-IN')}</Text>
+                <Text style={s.originalPrice} numberOfLines={1}>Rs {Number(originalPrice).toLocaleString('en-IN')}</Text>
               )}
               {discount > 0 && (
                 <View style={s.saveBadge}>

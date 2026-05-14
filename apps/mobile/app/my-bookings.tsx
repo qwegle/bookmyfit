@@ -37,8 +37,8 @@ export default function MyBookings() {
   const load = useCallback(async (refresh = false) => {
     if (refresh) setRefreshing(true); else setLoading(true);
     try {
-      const data = await api.get('/sessions/my-bookings');
-      setBookings(Array.isArray(data) ? data : []);
+      const data: any = await api.get('/sessions/my-bookings');
+      setBookings(Array.isArray(data) ? data : data?.bookings || data?.data || []);
     } catch {
       setBookings([]);
     } finally {

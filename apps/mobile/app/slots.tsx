@@ -33,6 +33,21 @@ function dayLabel(d: Date, index: number) {
   return d.toLocaleDateString('en-IN', { weekday: 'short' });
 }
 
+function formatClockTime(value: any) {
+  if (!value) return '';
+  const match = String(value).trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return String(value);
+  const hour = Number(match[1]);
+  const minute = match[2];
+  if (!Number.isFinite(hour) || hour < 0 || hour > 23) return String(value);
+  return `${hour % 12 || 12}:${minute} ${hour >= 12 ? 'PM' : 'AM'}`;
+}
+
+function formatClockRange(start?: any, end?: any) {
+  if (!start || !end) return '--';
+  return `${formatClockTime(start)} - ${formatClockTime(end)}`;
+}
+
 export default function SlotsScreen() {
   const { gymId } = useLocalSearchParams<{ gymId?: string }>();
   const days = getNext7Days();
@@ -266,7 +281,7 @@ export default function SlotsScreen() {
                   <View style={s.slotTimeRow}>
                     <IconClock size={13} color={isFull ? colors.t3 : stColor} />
                     <Text style={[s.slotTime, isFull && s.slotTimeFull]}>
-                      {slot.startTime} – {slot.endTime}
+                      {formatClockRange(slot.startTime, slot.endTime)}
                     </Text>
                   </View>
                   {stName ? (
@@ -313,7 +328,7 @@ export default function SlotsScreen() {
                 <View key={bk.id || bk._id} style={s.bookingCard}>
                   <View style={{ flex: 1 }}>
                     <Text style={s.bookingGym}>{gymName}</Text>
-                    <Text style={s.bookingTime}>{date} · {start} – {end}</Text>
+                    <Text style={s.bookingTime} numberOfLines={1}>{date} | {formatClockRange(start, end)}</Text>
                   </View>
                   <View style={[s.statusBadge, status === 'cancelled' && s.statusBadgeCancelled]}>
                     <Text style={[s.statusText, status === 'cancelled' && s.statusTextCancelled]}>

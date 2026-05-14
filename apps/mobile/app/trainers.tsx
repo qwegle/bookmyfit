@@ -50,6 +50,8 @@ export default function TrainersScreen() {
     if (!selected || !user) return;
     const months = Math.max(1, parseInt(durationMonths) || 1);
     const startDate = date.trim() || new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const monthlyPrice = Number(selected.monthlyPriceInr || selected.monthlyPrice || selected.pricePerSession || 0);
+    const totalPrice = Math.max(0, monthlyPrice * months);
     setBooking(true);
     try {
       // trainersApi.book creates booking + Cashfree order in one call
@@ -69,7 +71,9 @@ export default function TrainersScreen() {
             orderId,
             sessionId,
             planId: 'pt_monthly',
+            planName: `${months} month trainer plan`,
             gymId: selected.gymId || (gymId as string) || '',
+            amountPaid: String(totalPrice),
           },
         } as any);
       } else {

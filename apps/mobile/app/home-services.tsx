@@ -41,11 +41,8 @@ export default function HomeServicesScreen() {
 
   const filtered = providers.filter(p => {
     if (activeCategory === 'All') return true;
-    // Filter by services preview if available
-    if (p.services && p.services.length > 0) {
-      return p.services.some(s => s.toLowerCase().includes(activeCategory.toLowerCase()));
-    }
-    return true;
+    const haystack = [p.serviceType, p.name, ...(p.services || [])].filter(Boolean).join(' ').toLowerCase();
+    return haystack.includes(activeCategory.toLowerCase());
   });
 
   return (
@@ -96,7 +93,7 @@ export default function HomeServicesScreen() {
           ) : (
             filtered.map(provider => {
               const heroImg = wellnessPartnerImage(provider);
-              const services = provider.services || [];
+              const services = provider.services?.length ? provider.services : [provider.serviceType || 'Home Service'];
               return (
                 <View key={provider.id} style={s.providerCard}>
                   {/* Image header */}
@@ -136,13 +133,13 @@ export default function HomeServicesScreen() {
                     <View style={s.cardFooter}>
                       <View>
                         <Text style={s.fromLabel}>Starting from</Text>
-                        <Text style={s.fromPrice}>{provider.minPrice ? `₹${provider.minPrice.toLocaleString()}` : 'Pricing not added'}</Text>
+                        <Text style={s.fromPrice} numberOfLines={1}>{provider.minPrice ? `Rs ${provider.minPrice.toLocaleString()}` : 'Pricing not added'}</Text>
                       </View>
                       <TouchableOpacity
                         style={s.bookBtn}
                         onPress={() => router.push({ pathname: '/wellness/[id]', params: { id: provider.id } } as any)}
                       >
-                        <Text style={s.bookBtnText}>View Services</Text>
+                        <Text style={s.bookBtnText} numberOfLines={1}>Services</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -219,8 +216,10 @@ const s = StyleSheet.create({
 
   cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
   fromLabel: { fontFamily: fonts.sans, fontSize: 11, color: colors.t2, marginBottom: 2 },
-  fromPrice: { fontFamily: fonts.sansBold, fontSize: 18, color: colors.accent },
+  fromPrice: { maxWidth: 170, fontFamily: fonts.sansBold, fontSize: 16, color: colors.accent },
   bookBtn: {
+    minWidth: 90,
+    alignItems: 'center',
     backgroundColor: colors.accentSoft,
     borderRadius: radius.pill,
     borderWidth: 1,

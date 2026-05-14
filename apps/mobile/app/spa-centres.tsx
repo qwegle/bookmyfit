@@ -66,7 +66,7 @@ export default function SpaCentresScreen() {
   const filtered = useMemo(() => {
     if (category === 'All') return partners;
     const q = category.toLowerCase();
-    return partners.filter((partner) => String(partner.serviceType || '').toLowerCase().includes(q));
+    return partners.filter((partner) => [partner.serviceType, partner.name].filter(Boolean).join(' ').toLowerCase().includes(q));
   }, [category, partners]);
 
   return (
@@ -129,10 +129,10 @@ export default function SpaCentresScreen() {
                 <View style={s.cardFooter}>
                   <View>
                     <Text style={s.metaLabel}>{partner.serviceCount || 0} services available</Text>
-                    <Text style={s.price}>{partner.minPrice ? `From Rs ${Number(partner.minPrice).toLocaleString('en-IN')}` : 'Pricing not added'}</Text>
+                    <Text style={s.price} numberOfLines={1}>{partner.minPrice ? `From Rs ${Number(partner.minPrice).toLocaleString('en-IN')}` : 'Pricing not added'}</Text>
                   </View>
                   <View style={s.viewBtn}>
-                    <Text style={s.viewText}>View Services</Text>
+                    <Text style={s.viewText} numberOfLines={1}>Services</Text>
                     <IconChevronRight size={13} color={colors.accent} />
                   </View>
                 </View>
@@ -197,14 +197,16 @@ const s = StyleSheet.create({
   locationText: { flex: 1, fontFamily: fonts.sans, fontSize: 12, color: 'rgba(255,255,255,0.72)' },
   cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: 14 },
   metaLabel: { fontFamily: fonts.sans, fontSize: 11, color: colors.t2, marginBottom: 3 },
-  price: { fontFamily: fonts.sansBold, fontSize: 16, color: colors.accent },
+  price: { maxWidth: 180, fontFamily: fonts.sansBold, fontSize: 15, color: colors.accent },
   viewBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
+    minWidth: 90,
+    justifyContent: 'center',
     backgroundColor: colors.accentSoft,
     borderWidth: 1,
     borderColor: colors.accentBorder,
     borderRadius: radius.pill,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 8,
   },
   viewText: { fontFamily: fonts.sansBold, fontSize: 12, color: colors.accent },

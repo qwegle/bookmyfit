@@ -43,7 +43,7 @@ const HERO_SLIDES = [
 type ApiPartner = {
   id: string; name: string; serviceType: string; city: string; area: string;
   rating: number; reviewCount: number; distanceLabel: string; photos: string[];
-  discountPercent?: number;
+  discountPercent?: number; minPrice?: number | null; serviceCount?: number;
 };
 type ApiService = {
   id: string; name: string; durationMinutes: number; price: number;
@@ -68,7 +68,7 @@ export default function WellnessScreen() {
       fetch(`${API}/api/v1/wellness/services/all`).then(r => r.json()).catch(() => null),
     ]).then(([pRes, sRes]) => {
       const pts = pRes?.data || pRes;
-      const svcs = sRes;
+      const svcs = Array.isArray(sRes) ? sRes : sRes?.data || sRes?.services || [];
       if (Array.isArray(pts) && pts.length > 0) setPartners(pts);
       if (Array.isArray(svcs) && svcs.length > 0) setServices(svcs);
     }).catch(() => {}).finally(() => setLoading(false));
@@ -95,9 +95,17 @@ export default function WellnessScreen() {
 
   // Get min price for a partner from services
   const getMinPrice = (partnerId: string): number | null => {
-    const partnerServices = services.filter(s => s.partnerId === partnerId);
+    const partnerServices = services.filter(s => String(s.partnerId) === String(partnerId));
     if (partnerServices.length === 0) return null;
-    return Math.min(...partnerServices.map(s => Number(s.price)));
+    const prices = partnerServices.map(s => Number(s.price)).filter(price => Number.isFinite(price) && price > 0);
+    return prices.length ? Math.min(...prices) : null;
+  };
+
+  const getPartnerMinPrice = (partner: ApiPartner): number | null => {
+    const fromServices = getMinPrice(partner.id);
+    if (fromServices) return fromServices;
+    const fromPartner = Number(partner.minPrice);
+    return Number.isFinite(fromPartner) && fromPartner > 0 ? fromPartner : null;
   };
 
   const displayPartners: ApiPartner[] = partners;
@@ -112,6 +120,12 @@ export default function WellnessScreen() {
         return type !== 'home' && !type.includes('home');
       });
   const filteredPartners = partnersByType;
+  const partnerSectionTitle = activeFilter === 'home'
+    ? 'Top Home Services Near You'
+    : activeFilter === 'spa'
+      ? 'Top Spa Centres Near You'
+      : 'Top Wellness Partners Near You';
+  const partnerSeeAllRoute = activeFilter === 'home' ? '/home-services' : '/spa-centres';
 
   // Partner tags based on service type
   const getPartnerTags = (partner: ApiPartner) => {
@@ -218,6 +232,8 @@ export default function WellnessScreen() {
           contentContainerStyle={s.servicesScroll}
           renderItem={({ item: svc }) => {
             const imgUri = wellnessServiceImage(svc);
+            const duration = Number(svc.durationMinutes || (svc as any).duration || 45);
+            const price = Number(svc.price || 0);
             return (
               <TouchableOpacity
                 style={s.svcCard}
@@ -230,8 +246,8 @@ export default function WellnessScreen() {
                         serviceId: svc.id,
                         partnerId: svc.partnerId,
                         serviceName: svc.name,
-                        price: String(svc.price),
-                        duration: String(svc.durationMinutes),
+                        price: String(price),
+                        duration: String(duration),
                       },
                     } as any);
                   } else {
@@ -242,7 +258,7 @@ export default function WellnessScreen() {
                 <Image source={{ uri: imgUri }} style={s.svcImage} />
                 <View style={s.svcInfo}>
                   <Text style={s.svcName} numberOfLines={1}>{svc.name}</Text>
-                  <Text style={s.svcMeta}>{svc.durationMinutes} Min • ₹{Number(svc.price).toLocaleString('en-IN')}</Text>
+                  <Text style={s.svcMeta} numberOfLines={1}>{duration} Min | {price > 0 ? `Rs ${price.toLocaleString('en-IN')}` : 'Price not added'}</Text>
                 </View>
               </TouchableOpacity>
             );
@@ -266,8 +282,8 @@ export default function WellnessScreen() {
 
         {/* Top Spa Centres */}
         <View style={s.sectionHeader}>
-          <Text style={s.sectionTitle}>Top Spa Centres Near You</Text>
-          <TouchableOpacity onPress={() => router.push('/spa-centres' as any)}><Text style={s.seeAll}>See all</Text></TouchableOpacity>
+          <Text style={s.sectionTitle}>{partnerSectionTitle}</Text>
+          <TouchableOpacity onPress={() => router.push(partnerSeeAllRoute as any)}><Text style={s.seeAll}>See all</Text></TouchableOpacity>
         </View>
 
         {loading ? (
@@ -279,7 +295,7 @@ export default function WellnessScreen() {
               <Text style={s.emptyText}>No providers are available for this filter right now.</Text>
             </View>
           ) : filteredPartners.map((partner) => {
-            const minPrice = getMinPrice(partner.id);
+            const minPrice = getPartnerMinPrice(partner);
             const imgUri = getPartnerImage(partner);
             const liked = likedIds.has(partner.id);
             const tags = getPartnerTags(partner);
@@ -300,7 +316,13 @@ export default function WellnessScreen() {
                     </View>
                   )}
                   {/* Heart */}
-                  <TouchableOpacity style={s.heartBtn} onPress={() => toggleLike(partner.id)}>
+                  <TouchableOpacity
+                    style={s.heartBtn}
+                    onPress={(event: any) => {
+                      event?.stopPropagation?.();
+                      toggleLike(partner.id);
+                    }}
+                  >
                     <IconHeart size={14} color={liked ? '#ff4d6d' : '#fff'} filled={liked} />
                   </TouchableOpacity>
                 </View>
@@ -312,7 +334,7 @@ export default function WellnessScreen() {
                     <Text style={s.partnerName} numberOfLines={1}>{partner.name}</Text>
                     <View style={s.priceBlock}>
                       <Text style={s.priceFrom}>From</Text>
-                      <Text style={s.priceVal}>{minPrice ? `₹${Number(minPrice).toLocaleString('en-IN')}` : 'Not added'}</Text>
+                      <Text style={s.priceVal} numberOfLines={1}>{minPrice ? `Rs ${Number(minPrice).toLocaleString('en-IN')}` : 'Not added'}</Text>
                     </View>
                   </View>
 
@@ -320,13 +342,15 @@ export default function WellnessScreen() {
                   <View style={s.ratingRow}>
                     <IconStar size={12} color={colors.star} />
                     <Text style={s.ratingText}>{partner.rating ? partner.rating.toFixed(1) : '--'}</Text>
-                    <Text style={s.reviewCount}>({partner.reviewCount || 0} reviews)</Text>
+                    <Text style={s.reviewCount} numberOfLines={1}>({partner.reviewCount || 0} reviews)</Text>
                   </View>
 
                   {/* Row 3: location */}
                   <View style={s.locationRow}>
                     <IconPin size={12} color={colors.t2} />
-                    <Text style={s.locationText}>{partner.area}, {partner.city}{partner.distanceLabel ? ` • ${partner.distanceLabel}` : ''}</Text>
+                    <Text style={s.locationText} numberOfLines={1}>
+                      {[partner.area, partner.city].filter(Boolean).join(', ') || 'Location not added'}{partner.distanceLabel ? ` | ${partner.distanceLabel}` : ''}
+                    </Text>
                   </View>
 
                   {/* Row 4: tags */}
@@ -342,11 +366,14 @@ export default function WellnessScreen() {
                   <View style={s.viewRow}>
                     <TouchableOpacity
                       style={s.viewBtn}
-                      onPress={() => router.push(`/wellness/${partner.id}` as any)}
+                      onPress={(event: any) => {
+                        event?.stopPropagation?.();
+                        router.push(`/wellness/${partner.id}` as any);
+                      }}
                       accessibilityRole="button"
                       accessibilityLabel={`View services for ${partner.name}`}
                     >
-                      <Text style={s.viewBtnText}>View Services</Text>
+                      <Text style={s.viewBtnText} numberOfLines={1}>Services</Text>
                       <IconChevronRight size={12} color={colors.accent} />
                     </TouchableOpacity>
                   </View>
@@ -500,9 +527,9 @@ const s = StyleSheet.create({
   partnerInfo: { flex: 1, minWidth: 0, paddingHorizontal: 12, paddingVertical: 10, gap: 4 },
   partnerRow1: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
   partnerName: { flex: 1, minWidth: 0, fontFamily: fonts.sansBold, fontSize: 14, lineHeight: 18, color: '#fff' },
-  priceBlock: { alignItems: 'flex-end' },
+  priceBlock: { alignItems: 'flex-end', maxWidth: 82 },
   priceFrom: { fontFamily: fonts.sans, fontSize: 9, color: colors.t2 },
-  priceVal: { fontFamily: fonts.sansBold, fontSize: 16, color: colors.accent },
+  priceVal: { fontFamily: fonts.sansBold, fontSize: 14, color: colors.accent },
 
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   ratingText: { fontFamily: fonts.sansBold, fontSize: 12, color: colors.star },
@@ -521,11 +548,12 @@ const s = StyleSheet.create({
   viewRow: { flexDirection: 'row', justifyContent: 'flex-start', marginTop: 'auto' },
   viewBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    minHeight: 36,
+    minHeight: 34,
+    minWidth: 92,
     backgroundColor: colors.accentSoft,
     borderWidth: 1,
     borderColor: colors.accentBorder,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: radius.pill,
     alignSelf: 'flex-start',

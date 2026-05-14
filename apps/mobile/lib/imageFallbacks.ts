@@ -1,3 +1,5 @@
+import { API_BASE } from './api';
+
 export const DEFAULT_GYM_IMAGE =
   'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=900&q=80';
 
@@ -14,7 +16,12 @@ export const DEFAULT_PRODUCT_IMAGE =
   'https://images.unsplash.com/photo-1593095948071-474c5cc2989d?w=900&q=80';
 
 function cleanImage(value: any): string {
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : '';
+  if (typeof value !== 'string') return '';
+  const image = value.trim();
+  if (!image) return '';
+  if (/^(https?:)?\/\//i.test(image) || /^data:image\//i.test(image)) return image;
+  if (image.startsWith('/')) return `${API_BASE}${image}`;
+  return '';
 }
 
 export function firstImage(...values: any[]): string {
