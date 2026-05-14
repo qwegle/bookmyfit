@@ -45,9 +45,35 @@ class WellnessService {
     await this.services.update({ partnerId: id } as any, { isActive: false } as any);
     return { success: true };
   }
-  listServicesOf(partnerId: string) { return this.services.find({ where: { partnerId, isActive: true } }); }
-  createService(data: Partial<WellnessServiceEntity>) { return this.services.save(this.services.create(data)); }
-  updateService(id: string, data: Partial<WellnessServiceEntity>) { return this.services.save({ id, ...data }); }
+  private normalizeServiceData(data: any, defaults: Partial<WellnessServiceEntity> = {}) {
+    const durationMinutes = Number(data.durationMinutes ?? data.duration ?? defaults.durationMinutes ?? 60);
+    const price = Number(data.price ?? defaults.price ?? 0);
+    const originalPrice = data.originalPrice === null || data.originalPrice === ''
+      ? null
+      : data.originalPrice !== undefined
+        ? Number(data.originalPrice)
+        : defaults.originalPrice;
+    return {
+      ...defaults,
+      ...data,
+      durationMinutes: Number.isFinite(durationMinutes) && durationMinutes > 0 ? durationMinutes : 60,
+      price: Number.isFinite(price) ? price : 0,
+      originalPrice,
+      approvalStatus: data.approvalStatus || defaults.approvalStatus || 'approved',
+    };
+  }
+  listServicesOf(partnerId: string) {
+    return this.services.find({ where: { partnerId, isActive: true, approvalStatus: 'approved' } as any });
+  }
+  createService(data: Partial<WellnessServiceEntity>) {
+    const normalized = this.normalizeServiceData(data, { approvalStatus: 'approved', isActive: true } as any);
+    return this.services.save(this.services.create(normalized));
+  }
+  async updateService(id: string, data: Partial<WellnessServiceEntity>) {
+    const existing = await this.services.findOne({ where: { id } });
+    if (!existing) throw new NotFoundException('Service not found');
+    return this.services.save({ ...existing, ...this.normalizeServiceData(data, existing) });
+  }
   async deleteService(id: string) {
     await this.services.update(id, { isActive: false } as any);
     return { success: true };
@@ -57,9 +83,28 @@ class WellnessService {
     const qb = this.services.createQueryBuilder('s')
       .innerJoinAndMapOne('s.partner', WellnessPartnerEntity, 'p', 's."partnerId" = p.id')
       .where('s."isActive" = true')
+      .andWhere("s.\"approvalStatus\" = 'approved'")
       .andWhere("p.status = 'active'");
     if (filter.category) qb.andWhere('p."serviceType" = :cat', { cat: filter.category });
     return qb.orderBy('s.price', 'ASC').getMany();
+  }
+
+  async listAdminPartners() {
+    const [partners] = await this.partners.findAndCount({ order: { createdAt: 'DESC' } });
+    const result = await Promise.all(partners.map(async (partner) => {
+      const svcs = await this.services.find({ where: { partnerId: partner.id } });
+      const active = svcs.filter((s) => s.isActive && (s as any).approvalStatus === 'approved');
+      const minPrice = active.length ? Math.min(...active.map(s => Number(s.price))) : null;
+      return { ...partner, minPrice, serviceCount: active.length, totalServiceCount: svcs.length };
+    }));
+    return result;
+  }
+
+  listAdminServices() {
+    return this.services.createQueryBuilder('s')
+      .leftJoinAndMapOne('s.partner', WellnessPartnerEntity, 'p', 's."partnerId" = p.id')
+      .orderBy('s.name', 'ASC')
+      .getMany();
   }
 
   async listPartnersWithMinPrice(filter: { city?: string; serviceType?: string } = {}, page: any = 1, limit: any = 20) {
@@ -139,13 +184,24 @@ class WellnessService {
   partnerServices(partnerId: string) { return this.services.find({ where: { partnerId } }); }
 
   async createPartnerService(partnerId: string, data: Partial<WellnessServiceEntity>) {
-    return this.services.save(this.services.create({ ...data, partnerId, isActive: true }));
+    const normalized = this.normalizeServiceData(data, {
+      partnerId,
+      isActive: false,
+      approvalStatus: 'pending',
+    } as any);
+    return this.services.save(this.services.create(normalized));
   }
 
   async updatePartnerService(partnerId: string, serviceId: string, data: Partial<WellnessServiceEntity>) {
     const svc = await this.services.findOne({ where: { id: serviceId, partnerId } });
     if (!svc) throw new Error('Service not found');
-    return this.services.save({ ...svc, ...data });
+    const normalized = this.normalizeServiceData(data, {
+      ...svc,
+      isActive: false,
+      approvalStatus: 'pending',
+      reviewNote: null,
+    } as any);
+    return this.services.save({ ...svc, ...normalized, partnerId });
   }
 
   async deletePartnerService(partnerId: string, serviceId: string) {
@@ -250,6 +306,20 @@ class WellnessController {
     @Query('limit') limit = 20,
   ) {
     return this.svc.listPartnersWithMinPrice({ city, serviceType: type }, +page, +limit);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('super_admin')
+  @Get('admin/partners')
+  adminPartners() {
+    return this.svc.listAdminPartners();
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('super_admin')
+  @Get('admin/services')
+  adminServices() {
+    return this.svc.listAdminServices();
   }
 
   @Get('partners/:id')

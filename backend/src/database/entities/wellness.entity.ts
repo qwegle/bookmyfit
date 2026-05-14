@@ -31,6 +31,8 @@ export class WellnessServiceEntity {
   @Column({ type: 'numeric', precision: 10, scale: 2, nullable: true }) originalPrice: number;
   @Column() durationMinutes: number;
   @Column({ default: true }) isActive: boolean;
+  @Column({ length: 20, default: 'approved' }) approvalStatus: string; // pending, approved, rejected
+  @Column({ type: 'text', nullable: true }) reviewNote: string;
   @Column({ nullable: true, type: 'text' }) imageUrl: string;
   @Column({ length: 50, nullable: true }) category: string;
 }

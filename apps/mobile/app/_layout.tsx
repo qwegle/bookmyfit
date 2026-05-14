@@ -8,10 +8,11 @@ import {
   Poppins_700Bold,
   Poppins_800ExtraBold,
 } from '@expo-google-fonts/poppins';
-import { View, ActivityIndicator, Platform } from 'react-native';
-import { useEffect } from 'react';
+import { Platform, StyleSheet, View } from 'react-native';
+import { useEffect, useState } from 'react';
 import { colors } from '../theme/brand';
 import { appStorage, getToken, getUser } from '../lib/api';
+import AppLoadingScreen from '../components/AppLoadingScreen';
 
 const ONBOARDED_KEY = 'bmf_onboarded';
 
@@ -40,6 +41,7 @@ async function resolveInitialRoute() {
 }
 
 export default function RootLayout() {
+  const [booting, setBooting] = useState(true);
   const [loaded] = useFonts({
     Poppins_400Regular,
     Poppins_500Medium,
@@ -79,17 +81,16 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
-    if (loaded) {
-      resolveInitialRoute();
-    }
+    if (!loaded) return;
+    let active = true;
+    resolveInitialRoute().finally(() => {
+      if (active) setBooting(false);
+    });
+    return () => { active = false; };
   }, [loaded]);
 
   if (!loaded) {
-    return (
-      <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={colors.accent} />
-      </View>
-    );
+    return <AppLoadingScreen />;
   }
 
   return (
@@ -135,6 +136,11 @@ export default function RootLayout() {
         <Stack.Screen name="cart" options={{ headerShown: false }} />
         <Stack.Screen name="booking-success" options={{ headerShown: false, gestureEnabled: false }} />
       </Stack>
+      {booting && (
+        <View style={{ ...StyleSheet.absoluteFillObject, zIndex: 999 }}>
+          <AppLoadingScreen />
+        </View>
+      )}
     </>
   );
 }

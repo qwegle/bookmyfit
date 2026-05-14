@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Shell from '../../components/Shell';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/Toast';
-import { Info, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Info, Plus, Save, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
 
 type SectionConfig = {
   order: number;
@@ -75,8 +75,22 @@ export default function HomepagePage() {
     const newBackend = uiToBackend(updated, backendSections);
     try {
       await api.put('/homepage/config', { sections: newBackend });
-    } catch { /* ignore save errors */ }
-  }, [backendSections]);
+      setBackendSections(newBackend);
+    } catch {
+      toast('Homepage save failed. Please check your admin session.', 'error');
+    }
+  }, [backendSections, toast]);
+
+  const saveBackendSections = useCallback(async (nextBackend: any[], message = 'Homepage updated') => {
+    setBackendSections(nextBackend);
+    setSections(backendToUi(nextBackend));
+    try {
+      await api.put('/homepage/config', { sections: nextBackend });
+      toast(message);
+    } catch {
+      toast('Homepage save failed. Please check your admin session.', 'error');
+    }
+  }, [toast]);
 
   const loadFeaturedGyms = useCallback(async () => {
     setGymsLoading(true);
@@ -106,6 +120,62 @@ export default function HomepagePage() {
   };
 
   const activeSections = sections.filter((s) => s.status === 'Active');
+  const heroSection = backendSections.find((s) => s.id === 'hero' || s.type === 'hero');
+  const heroSlides = Array.isArray(heroSection?.slides) ? heroSection.slides : [];
+
+  const updateHeroSlide = (index: number, key: string, value: string) => {
+    const nextBackend = backendSections.map((section) => {
+      if (section.id !== heroSection?.id) return section;
+      const nextSlides = [...heroSlides];
+      nextSlides[index] = { ...nextSlides[index], [key]: value };
+      return { ...section, slides: nextSlides };
+    });
+    setBackendSections(nextBackend);
+  };
+
+  const persistHeroSlides = () => {
+    if (!heroSection) return;
+    const cleaned = heroSlides.map((slide: any) => ({
+      imageUrl: slide.imageUrl || '',
+      headline: slide.headline || '',
+      headlineAccent: slide.headlineAccent || '',
+      sub: slide.sub || '',
+      cta: slide.cta || '',
+      ctaRoute: slide.ctaRoute || '',
+    }));
+    saveBackendSections(
+      backendSections.map((section) => section.id === heroSection.id ? { ...section, slides: cleaned } : section),
+      'Hero banners saved'
+    );
+  };
+
+  const addHeroSlide = () => {
+    if (!heroSection) return;
+    const nextSlide = {
+      imageUrl: '',
+      headline: 'New Banner',
+      headlineAccent: '',
+      sub: '',
+      cta: 'Explore',
+      ctaRoute: '/gyms',
+    };
+    const nextBackend = backendSections.map((section) =>
+      section.id === heroSection.id ? { ...section, slides: [...heroSlides, nextSlide] } : section
+    );
+    setBackendSections(nextBackend);
+    setSections(backendToUi(nextBackend));
+  };
+
+  const removeHeroSlide = (index: number) => {
+    if (!heroSection || heroSlides.length <= 1) return;
+    const nextBackend = backendSections.map((section) =>
+      section.id === heroSection.id
+        ? { ...section, slides: heroSlides.filter((_: any, i: number) => i !== index) }
+        : section
+    );
+    setBackendSections(nextBackend);
+    setSections(backendToUi(nextBackend));
+  };
 
   return (
     <Shell title="Homepage Builder">
@@ -169,6 +239,49 @@ export default function HomepagePage() {
               ))}
             </tbody>
           </table>
+
+          {heroSection && (
+            <div style={{ marginTop: 28 }}>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h4 className="serif text-lg" style={{ margin: 0 }}>Hero Banner Slides</h4>
+                  <p style={{ fontSize: 12, color: 'var(--t3)', margin: '4px 0 0' }}>
+                    Update the app banner image, text and CTA shown at the top of the mobile home screen.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button className="btn btn-ghost" onClick={addHeroSlide}><Plus size={14} /> Add Slide</button>
+                  <button className="btn btn-primary" onClick={persistHeroSlides}><Save size={14} /> Save Banners</button>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gap: 12 }}>
+                {heroSlides.map((slide: any, index: number) => (
+                  <div key={index} className="glass p-4" style={{ borderRadius: 12 }}>
+                    <div className="flex items-center justify-between mb-3">
+                      <strong style={{ color: '#fff', fontSize: 13 }}>Slide {index + 1}</strong>
+                      <button
+                        className="btn btn-ghost"
+                        onClick={() => removeHeroSlide(index)}
+                        disabled={heroSlides.length <= 1}
+                        style={{ color: '#ff6b6b', opacity: heroSlides.length <= 1 ? 0.45 : 1 }}
+                      >
+                        <Trash2 size={14} /> Remove
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <input className="glass-input" placeholder="Image URL" value={slide.imageUrl || ''} onChange={e => updateHeroSlide(index, 'imageUrl', e.target.value)} />
+                      <input className="glass-input" placeholder="Headline" value={slide.headline || ''} onChange={e => updateHeroSlide(index, 'headline', e.target.value)} />
+                      <input className="glass-input" placeholder="Accent text" value={slide.headlineAccent || ''} onChange={e => updateHeroSlide(index, 'headlineAccent', e.target.value)} />
+                      <input className="glass-input" placeholder="CTA text" value={slide.cta || ''} onChange={e => updateHeroSlide(index, 'cta', e.target.value)} />
+                      <input className="glass-input" placeholder="CTA route, e.g. /gyms" value={slide.ctaRoute || ''} onChange={e => updateHeroSlide(index, 'ctaRoute', e.target.value)} />
+                      <input className="glass-input" placeholder="Subtitle" value={slide.sub || ''} onChange={e => updateHeroSlide(index, 'sub', e.target.value)} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Featured Gyms preview */}
           <div style={{ marginTop: 28 }}>

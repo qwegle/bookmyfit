@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, View, Text, StyleSheet, TouchableOpacity, ImageBackground } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -90,6 +90,24 @@ function normalizeSubscription(sub: any) {
   };
 }
 
+function subTime(value: any) {
+  if (!value) return 0;
+  const ms = new Date(String(value)).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function mostRelevantSubscription(list: any[]) {
+  const active = list
+    .filter(isActiveSubscription)
+    .sort((a, b) => subTime(b.endDate || b.createdAt) - subTime(a.endDate || a.createdAt));
+  if (active[0]) return [active[0]];
+
+  const expired = list
+    .filter((sub) => !isActiveSubscription(sub) && String(sub.status || '').toLowerCase() !== 'pending')
+    .sort((a, b) => subTime(b.endDate || b.createdAt) - subTime(a.endDate || a.createdAt));
+  return expired[0] ? [expired[0]] : [];
+}
+
 function SkeletonCard() {
   return <View style={[s.subCard, { height: 200, backgroundColor: 'rgba(255,255,255,0.06)' }]} />;
 }
@@ -98,6 +116,7 @@ export default function Subscriptions() {
   const [subs, setSubs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState('');
+  const displaySubs = useMemo(() => mostRelevantSubscription(subs), [subs]);
 
   const loadSubscriptions = useCallback(() => {
     setLoading(true);
@@ -125,7 +144,7 @@ export default function Subscriptions() {
           {/* Header */}
           <View style={s.pageHeader}>
             <Text style={s.pageTitle}>My Memberships</Text>
-            <Text style={s.pageSub}>Your active passes & subscriptions</Text>
+            <Text style={s.pageSub}>Your current pass and renewal status</Text>
           </View>
 
           {!!apiError && (
@@ -138,8 +157,8 @@ export default function Subscriptions() {
           )}
 
           {loading ? (
-            [1, 2, 3].map((i) => <SkeletonCard key={i} />)
-          ) : subs.length === 0 ? (
+            <SkeletonCard />
+          ) : displaySubs.length === 0 ? (
             <View style={s.emptyState}>
               <View style={s.emptyIconWrap}>
                 <IconDumbbell size={48} color={colors.t3} />
@@ -153,7 +172,7 @@ export default function Subscriptions() {
               </TouchableOpacity>
             </View>
           ) : (
-            subs.map((sub: any) => {
+            displaySubs.map((sub: any) => {
               const subId = sub.id || sub._id;
               const planType = derivePlanType(sub);
               const status = (sub.status || 'active').toLowerCase();

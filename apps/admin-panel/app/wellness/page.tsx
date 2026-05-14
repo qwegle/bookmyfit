@@ -47,10 +47,12 @@ type Partner = {
 type Service = {
   id: string; name: string; category: string; price: number; originalPrice: number | null;
   durationMinutes: number; isActive: boolean; partnerId: string; imageUrl: string | null;
+  approvalStatus?: 'pending' | 'approved' | 'rejected'; reviewNote?: string | null; partner?: Partner;
 };
+type ApprovalStatus = NonNullable<Service['approvalStatus']>;
 
 const defaultPartnerForm = { name: '', serviceType: 'Spa', city: '', area: '', address: '', status: 'active', discountPercent: '0', distanceLabel: '', commissionRate: '', photos: '' };
-const defaultServiceForm = { name: '', category: 'Massage', price: '', originalPrice: '', durationMinutes: '60', partnerId: '', imageUrl: '', isActive: true };
+const defaultServiceForm = { name: '', category: 'Massage', price: '', originalPrice: '', durationMinutes: '60', partnerId: '', imageUrl: '', isActive: true, approvalStatus: 'approved' };
 
 export default function WellnessPage() {
   const [tab, setTab] = useState<'centres' | 'services'>('centres');
@@ -73,8 +75,8 @@ export default function WellnessPage() {
 
   useEffect(() => {
     Promise.all([
-      api.get('/wellness/partners?page=1&limit=50').catch(() => null),
-      api.get('/wellness/services/all').catch(() => null),
+      api.get('/wellness/admin/partners').catch(() => null),
+      api.get('/wellness/admin/services').catch(() => null),
     ]).then(([partnersRes, servicesRes]) => {
       const pts = (partnersRes as any)?.data || partnersRes;
       const svcs = servicesRes;
@@ -162,11 +164,15 @@ export default function WellnessPage() {
       name: svc.name, category: svc.category, price: String(svc.price),
       originalPrice: String(svc.originalPrice || ''), durationMinutes: String(svc.durationMinutes),
       partnerId: svc.partnerId, imageUrl: svc.imageUrl || '', isActive: svc.isActive,
+      approvalStatus: svc.approvalStatus || 'approved',
     });
     setShowSvcForm(true);
   };
   const saveService = async () => {
     if (!svcForm.name || !svcForm.price) return flash('Please fill required fields', 'error');
+    const approvalStatus = (['pending', 'approved', 'rejected'].includes(svcForm.approvalStatus)
+      ? svcForm.approvalStatus
+      : 'approved') as ApprovalStatus;
     const body = {
       partnerId: svcForm.partnerId,
       name: svcForm.name,
@@ -175,6 +181,7 @@ export default function WellnessPage() {
       originalPrice: Number(svcForm.originalPrice) || null,
       durationMinutes: Number(svcForm.durationMinutes),
       isActive: svcForm.isActive,
+      approvalStatus,
       imageUrl: svcForm.imageUrl || null,
     };
     try {
@@ -198,11 +205,28 @@ export default function WellnessPage() {
     if (!svc) return;
     const nextActive = !svc.isActive;
     try {
-      await api.put(`/wellness/services/${id}`, { isActive: nextActive });
-      setServices(ss => ss.map(s => s.id === id ? { ...s, isActive: nextActive } : s));
+      const body: Partial<Service> = { isActive: nextActive, ...(nextActive ? { approvalStatus: 'approved' as ApprovalStatus } : {}) };
+      await api.put(`/wellness/services/${id}`, body);
+      setServices(ss => ss.map(s => s.id === id ? { ...s, ...body } : s));
       flash(nextActive ? 'Service activated' : 'Service deactivated');
     } catch {
       flash('Status update failed. Please retry after checking your login session.', 'error');
+    }
+  };
+  const reviewService = async (id: string, approvalStatus: 'approved' | 'rejected') => {
+    const body: any = {
+      approvalStatus,
+      isActive: approvalStatus === 'approved',
+      reviewNote: approvalStatus === 'rejected'
+        ? window.prompt('Reason for rejection?') || 'Rejected by admin'
+        : null,
+    };
+    try {
+      await api.put(`/wellness/services/${id}`, body);
+      setServices(ss => ss.map(s => s.id === id ? { ...s, ...body } : s));
+      flash(approvalStatus === 'approved' ? 'Service approved and visible' : 'Service rejected');
+    } catch {
+      flash('Review update failed. Please retry after checking your login session.', 'error');
     }
   };
   const deleteService = async (id: string) => {
@@ -217,6 +241,7 @@ export default function WellnessPage() {
 
   const catColor: Record<string, string> = { Massage: '#3DFF54', Cupping: '#9B5DE5', Physio: '#00AFFF', Spa: '#FFD93D', Nutrition: '#FF9F1C', Recovery: '#FF6B6B', Other: '#aaa' };
   const statusColor: Record<string, string> = { active: '#3DFF54', pending: '#FFD93D', inactive: '#ff6b6b' };
+  const approvalColor: Record<string, string> = { approved: '#3DFF54', pending: '#FFD93D', rejected: '#ff6b6b' };
 
   const filteredServices = selectedPartnerId
     ? services.filter(s => s.partnerId === selectedPartnerId)
@@ -443,6 +468,12 @@ export default function WellnessPage() {
                     <option value="false" style={{ background: '#111' }}>Inactive</option>
                   </select>
                 </div>
+                <div>
+                  <label style={label('APPROVAL')}>APPROVAL</label>
+                  <select style={{ ...input, cursor: 'pointer' }} value={svcForm.approvalStatus} onChange={e => setSvcForm(f => ({ ...f, approvalStatus: e.target.value }))}>
+                    {['approved', 'pending', 'rejected'].map(s => <option key={s} value={s} style={{ background: '#111' }}>{s}</option>)}
+                  </select>
+                </div>
                 <div style={{ gridColumn: '1 / -1' }}>
                   <label style={label('IMAGE URL')}>IMAGE URL</label>
                   <input style={input} placeholder="https://..." value={svcForm.imageUrl} onChange={e => setSvcForm(f => ({ ...f, imageUrl: e.target.value }))} />
@@ -458,10 +489,11 @@ export default function WellnessPage() {
           {/* Services list */}
           <div style={{ display: 'grid', gap: 10 }}>
             {filteredServices.map(svc => {
-              const partner = partners.find(p => p.id === svc.partnerId);
+              const partner = partners.find(p => p.id === svc.partnerId) || svc.partner;
               const cc = catColor[svc.category] || '#aaa';
+              const approval = svc.approvalStatus || 'approved';
               return (
-                <div key={svc.id} style={{ ...card, display: 'flex', alignItems: 'center', gap: 16, opacity: svc.isActive ? 1 : 0.5 }}>
+                <div key={svc.id} style={{ ...card, display: 'flex', alignItems: 'center', gap: 16, opacity: svc.isActive || approval === 'pending' ? 1 : 0.5 }}>
                   {svc.imageUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={svc.imageUrl} alt={svc.name} style={{ width: 60, height: 60, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} />
@@ -470,6 +502,7 @@ export default function WellnessPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6, flexWrap: 'wrap' }}>
                       <span style={{ fontFamily: 'DM Sans, sans-serif', fontWeight: 700, fontSize: 15, color: '#fff' }}>{svc.name}</span>
                       <span style={pill(cc)}>{svc.category}</span>
+                      <span style={pill(approvalColor[approval] || '#aaa')}>{approval}</span>
                       {!svc.isActive && <span style={pill('#ff6b6b')}>Inactive</span>}
                     </div>
                     <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
@@ -487,9 +520,20 @@ export default function WellnessPage() {
                           <Building2 size={13} /> {partner.name}
                         </span>
                       )}
+                      {svc.reviewNote && (
+                        <span style={{ color: '#ff9f9f', fontSize: 12, fontFamily: 'DM Sans, sans-serif' }}>
+                          Note: {svc.reviewNote}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                    {approval !== 'approved' && (
+                      <button style={btn('green')} onClick={() => reviewService(svc.id, 'approved')}><Check size={14} /> Approve</button>
+                    )}
+                    {approval !== 'rejected' && (
+                      <button style={btn('red')} onClick={() => reviewService(svc.id, 'rejected')}><X size={14} /> Reject</button>
+                    )}
                     <button style={btn()} onClick={() => openEditService(svc)}><Edit3 size={14} /> Edit</button>
                     <button
                       style={{ ...btn(), background: svc.isActive ? 'rgba(255,100,100,0.1)' : 'rgba(61,255,84,0.1)', color: svc.isActive ? '#ff6b6b' : '#3DFF54', borderColor: svc.isActive ? 'rgba(255,100,100,0.2)' : 'rgba(61,255,84,0.2)' }}

@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import { View, StyleSheet, ActivityIndicator, Alert, TouchableOpacity, Text, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
@@ -11,6 +11,7 @@ import { clearCart } from './cart';
 
 const CASHFREE_BASE_URL: string =
   (Constants.expoConfig?.extra as any)?.cashfreeBaseUrl ?? 'https://sandbox.cashfree.com';
+const CASHFREE_MODE = CASHFREE_BASE_URL.includes('sandbox') ? 'sandbox' : 'production';
 
 export default function PaymentWebview() {
   const {
@@ -26,18 +27,96 @@ export default function PaymentWebview() {
   const [loading, setLoading] = useState(true);
   const [mockConfirming, setMockConfirming] = useState(false);
   const webviewRef = useRef<any>(null);
+  const successHandledRef = useRef(false);
 
   // Support both old 'sessionId' param and new 'paymentSessionId' param
   const effectiveSessionId = paymentSessionId || sessionId || '';
   const isMock = effectiveSessionId.startsWith('mock_session_');
   const allowMockPayment = __DEV__ || API_BASE.includes('localhost') || API_BASE.includes('127.0.0.1');
 
-  // Build Cashfree checkout URL; use session-based URL when session ID available
-  const checkoutUrl = effectiveSessionId && !isMock
-    ? `${CASHFREE_BASE_URL}/pg/view/order?session_id=${effectiveSessionId}&order_id=${orderId}`
-    : `${CASHFREE_BASE_URL}/pg/orders/pay?order_id=${orderId}`;
+  const checkoutHtml = useMemo(() => {
+    const safeSession = JSON.stringify(effectiveSessionId);
+    const safeMode = JSON.stringify(CASHFREE_MODE);
+    const safeOrderId = JSON.stringify(orderId || '');
+    return `<!doctype html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <style>
+      html, body { margin:0; min-height:100%; background:#060606; color:#fff; font-family:Arial, sans-serif; }
+      .wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:28px; box-sizing:border-box; text-align:center; }
+      .dot { width:48px; height:48px; border:3px solid rgba(0,212,106,.25); border-top-color:#00D46A; border-radius:50%; margin:0 auto 18px; animation:spin .9s linear infinite; }
+      .title { font-size:18px; font-weight:700; margin-bottom:8px; }
+      .sub { font-size:13px; color:rgba(255,255,255,.55); line-height:1.45; }
+      .retry { margin-top:18px; padding:12px 18px; border-radius:999px; border:0; background:#00D46A; color:#060606; font-weight:700; }
+      @keyframes spin { to { transform:rotate(360deg); } }
+    </style>
+    <script src="https://sdk.cashfree.com/js/v3/cashfree.js"></script>
+  </head>
+  <body>
+    <div class="wrap">
+      <div>
+        <div class="dot"></div>
+        <div class="title">Opening secure payment</div>
+        <div class="sub">Order <span id="order"></span></div>
+        <button id="retry" class="retry" style="display:none">Retry payment</button>
+      </div>
+    </div>
+    <script>
+      const sessionId = ${safeSession};
+      const mode = ${safeMode};
+      const orderId = ${safeOrderId};
+      document.getElementById('order').textContent = orderId || '';
+      function post(type, payload) {
+        window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type, payload }));
+      }
+      async function startCheckout() {
+        try {
+          if (!sessionId) {
+            post('FAILURE', { message: 'Missing Cashfree payment session.' });
+            return;
+          }
+          if (typeof Cashfree !== 'function') {
+            post('FAILURE', { message: 'Cashfree SDK did not load.' });
+            return;
+          }
+          document.getElementById('retry').style.display = 'none';
+          const cashfree = Cashfree({ mode });
+          const result = await cashfree.checkout({
+            paymentSessionId: sessionId,
+            redirectTarget: '_self'
+          });
+          post('CHECKOUT_RESULT', result || {});
+        } catch (error) {
+          document.getElementById('retry').style.display = 'inline-block';
+          post('FAILURE', { message: error && (error.message || String(error)) });
+        }
+      }
+      document.getElementById('retry').addEventListener('click', startCheckout);
+      window.addEventListener('load', startCheckout);
+    </script>
+  </body>
+</html>`;
+  }, [effectiveSessionId, orderId]);
 
   const handleSuccess = async () => {
+    if (successHandledRef.current) return;
+    successHandledRef.current = true;
+    const shouldVerifyGenericOrder = returnRoute === 'store' || returnRoute === 'wellness' || planId === 'pt_monthly';
+    if (shouldVerifyGenericOrder && orderId) {
+      try {
+        const verifyRes: any = await api.post(`/payments/verify/${orderId}`, {});
+        if (!verifyRes?.paid && verifyRes?.paymentStatus !== 'PAID') {
+          Alert.alert('Payment is being confirmed', 'Your payment is still being confirmed. Please check again shortly.');
+          router.back();
+          return;
+        }
+      } catch {
+        Alert.alert('Payment is being confirmed', 'We could not verify the payment yet. Please check again shortly.');
+        router.back();
+        return;
+      }
+    }
     // Confirm wellness booking if bookingId present
     if (bookingId) {
       try { await api.post(`/wellness/bookings/${bookingId}/confirm`, {}); } catch {}
@@ -98,8 +177,7 @@ export default function PaymentWebview() {
     await handleSuccess();
   };
 
-  const handleNavigationChange = (navState: any) => {
-    const url = navState.url || '';
+  const handlePaymentUrl = (url: string) => {
     if (
       url.includes('bookmyfit://payment-success') ||
       url.includes('payment_status=SUCCESS') ||
@@ -113,6 +191,19 @@ export default function PaymentWebview() {
         { text: 'Cancel', onPress: () => router.back() },
       ]);
     }
+  };
+
+  const handleNavigationChange = (navState: any) => {
+    handlePaymentUrl(navState.url || '');
+  };
+
+  const handleShouldStart = (request: any) => {
+    const url = request?.url || '';
+    if (url.startsWith('bookmyfit://') || url.includes('payment-return')) {
+      handlePaymentUrl(url);
+      return false;
+    }
+    return true;
   };
 
   const injectedJs = `
@@ -129,6 +220,11 @@ export default function PaymentWebview() {
     try {
       const msg = JSON.parse(event.nativeEvent.data);
       if (msg.type === 'SUCCESS') handleSuccess();
+      else if (msg.type === 'CHECKOUT_RESULT') {
+        const payload = msg.payload || {};
+        const status = String(payload.paymentDetails?.paymentMessage || payload.order?.order_status || payload.paymentStatus || payload.status || '').toLowerCase();
+        if (status.includes('success') || status.includes('paid')) handleSuccess();
+      }
       else if (msg.type === 'FAILURE') {
         Alert.alert('Payment Failed', 'Please try again.', [
           { text: 'Try Again', onPress: () => webviewRef.current?.reload() },
@@ -249,14 +345,17 @@ export default function PaymentWebview() {
 
       <WebView
         ref={webviewRef}
-        source={{ uri: checkoutUrl }}
+        source={{ html: checkoutHtml, baseUrl: CASHFREE_BASE_URL }}
+        originWhitelist={['*']}
         onLoadEnd={() => setLoading(false)}
         onNavigationStateChange={handleNavigationChange}
+        onShouldStartLoadWithRequest={handleShouldStart}
         onMessage={handleMessage}
         injectedJavaScript={injectedJs}
         javaScriptEnabled={true}
         domStorageEnabled={true}
         mixedContentMode="compatibility"
+        setSupportMultipleWindows={false}
         style={{ flex: 1, backgroundColor: colors.bg }}
       />
     </SafeAreaView>

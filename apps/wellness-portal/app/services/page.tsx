@@ -10,9 +10,12 @@ type Service = {
   name: string;
   description?: string;
   duration?: number;
+  durationMinutes?: number;
   price?: number;
   category?: string;
   isActive?: boolean;
+  approvalStatus?: 'pending' | 'approved' | 'rejected';
+  reviewNote?: string | null;
 };
 
 const CATEGORIES = ['yoga', 'physio', 'nutrition', 'meditation', 'spa', 'training'];
@@ -55,7 +58,7 @@ export default function ServicesPage() {
     setForm({
       name: s.name,
       description: s.description || '',
-      duration: String(s.duration || ''),
+      duration: String(s.durationMinutes || s.duration || ''),
       price: String(s.price || ''),
       category: s.category || 'yoga',
     });
@@ -70,16 +73,16 @@ export default function ServicesPage() {
       const payload = {
         name: form.name,
         description: form.description,
-        duration: Number(form.duration),
+        durationMinutes: Number(form.duration),
         price: Number(form.price),
         category: form.category,
       };
       if (editTarget) {
         await api.put(`/wellness/${partnerId}/services/${editTarget.id}`, payload);
-        toast('Service updated');
+        toast('Service updated and sent for admin review');
       } else {
         await api.post(`/wellness/${partnerId}/services`, payload);
-        toast('Service added');
+        toast('Service added and sent for admin review');
       }
       setShowModal(false);
       load();
@@ -108,6 +111,11 @@ export default function ServicesPage() {
     meditation: '#F9A8D4',
     spa: '#FCD34D',
     training: '#3DFF54',
+  };
+  const approvalColor: Record<string, string> = {
+    approved: '#3DFF54',
+    pending: '#FCD34D',
+    rejected: '#FF6060',
   };
 
   return (
@@ -145,6 +153,11 @@ export default function ServicesPage() {
                     {s.category}
                   </span>
                 )}
+                <span
+                  className="text-xs font-bold uppercase tracking-wider mt-2 block"
+                  style={{ color: approvalColor[s.approvalStatus || 'approved'] || 'var(--accent)', letterSpacing: 1 }}>
+                  {s.approvalStatus || 'approved'}
+                </span>
               </div>
               <div className="flex gap-2">
                 <button
@@ -165,11 +178,14 @@ export default function ServicesPage() {
             {s.description && (
               <p style={{ fontSize: 12, color: 'var(--t2)', lineHeight: 1.5 }}>{s.description}</p>
             )}
+            {s.reviewNote && (
+              <p style={{ fontSize: 12, color: '#FF9F9F', lineHeight: 1.5 }}>{s.reviewNote}</p>
+            )}
 
             <div className="flex items-center gap-4 mt-auto pt-2" style={{ borderTop: '1px solid var(--border)' }}>
-              {s.duration != null && (
+              {(s.durationMinutes ?? s.duration) != null && (
                 <div style={{ fontSize: 12, color: 'var(--t2)' }}>
-                  <span className="font-semibold text-white">{s.duration}</span> min
+                  <span className="font-semibold text-white">{s.durationMinutes ?? s.duration}</span> min
                 </div>
               )}
               {s.price != null && (
@@ -178,8 +194,8 @@ export default function ServicesPage() {
                 </div>
               )}
               <div className="ml-auto">
-                <span className={s.isActive !== false ? 'badge-active' : 'badge-pending'}>
-                  {s.isActive !== false ? 'active' : 'inactive'}
+                <span className={s.isActive !== false && (s.approvalStatus || 'approved') === 'approved' ? 'badge-active' : 'badge-pending'}>
+                  {s.isActive !== false && (s.approvalStatus || 'approved') === 'approved' ? 'visible' : 'not visible'}
                 </span>
               </div>
             </div>

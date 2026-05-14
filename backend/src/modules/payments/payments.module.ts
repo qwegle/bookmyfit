@@ -1,4 +1,4 @@
-import { Module, Controller, Post, Body, Req, Headers, HttpCode, BadRequestException, Injectable } from '@nestjs/common';
+import { Module, Controller, Post, Body, Req, Headers, HttpCode, BadRequestException, Injectable, Param, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -7,6 +7,7 @@ import { SubscriptionEntity } from '../../database/entities/subscription.entity'
 import { OrderEntity } from '../../database/entities/store.entity';
 import { TrainerBookingEntity } from '../../database/entities/trainer.entity';
 import { WellnessBookingEntity } from '../../database/entities/wellness.entity';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Injectable()
 class PaymentsService {
@@ -33,16 +34,7 @@ class PaymentsService {
     return qb.getRawOne();
   }
 
-  /**
-   * Called by Cashfree on payment events.
-   * We look up the reference entity by cashfreeOrderId and mark it paid/active.
-   */
-  async handleWebhook(rawBody: string, payload: any) {
-    const event = payload?.type;
-    const orderId: string | undefined = payload?.data?.order?.order_id;
-    const status: string | undefined = payload?.data?.order?.order_status;
-    const paymentId: string | undefined = payload?.data?.payment?.cf_payment_id;
-
+  private async applyOrderStatus(orderId: string, status?: string, paymentId?: string, event?: string) {
     if (!orderId) return { processed: false, reason: 'No order_id' };
 
     // Try each entity type in turn
@@ -87,6 +79,26 @@ class PaymentsService {
 
     return { processed: false, reason: 'No matching order', event };
   }
+
+  /**
+   * Called by Cashfree on payment events.
+   * We look up the reference entity by cashfreeOrderId and mark it paid/active.
+   */
+  async handleWebhook(rawBody: string, payload: any) {
+    const event = payload?.type;
+    const orderId: string | undefined = payload?.data?.order?.order_id;
+    const status: string | undefined = payload?.data?.order?.order_status;
+    const paymentId: string | undefined = payload?.data?.payment?.cf_payment_id;
+    return this.applyOrderStatus(orderId || '', status, paymentId, event);
+  }
+
+  async verifyOrder(orderId: string) {
+    const cfOrder = await this.cashfree.fetchOrder(orderId);
+    const status = cfOrder?.order_status;
+    if (!status) throw new BadRequestException('Unable to verify payment status');
+    const processed = await this.applyOrderStatus(orderId, status, cfOrder?.cf_payment_id);
+    return { ...processed, orderId, paymentStatus: status, paid: status === 'PAID' };
+  }
 }
 
 @ApiTags('Payments')
@@ -103,6 +115,13 @@ class PaymentsController {
     return this.cashfree.createOrder(body);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Post('verify/:orderId')
+  @ApiOperation({ summary: 'Verify a Cashfree order and update matching BookMyFit record' })
+  verifyOrder(@Param('orderId') orderId: string) {
+    return this.svc.verifyOrder(orderId);
+  }
+
   @Post('webhook')
   @HttpCode(200)
   @ApiOperation({ summary: 'Cashfree webhook endpoint' })
@@ -112,7 +131,7 @@ class PaymentsController {
     @Headers('x-webhook-timestamp') timestamp: string,
     @Body() body: any,
   ) {
-    const raw = JSON.stringify(body);
+    const raw = Buffer.isBuffer(req.rawBody) ? req.rawBody.toString('utf8') : JSON.stringify(body);
     if (process.env.NODE_ENV === 'production' && (!signature || !timestamp)) {
       throw new BadRequestException('Missing webhook signature');
     }

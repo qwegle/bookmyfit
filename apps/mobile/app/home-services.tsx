@@ -214,18 +214,21 @@ const s = StyleSheet.create({
   },
   svcChipText: { fontFamily: fonts.sans, fontSize: 11, color: colors.t },
 
-  cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 46 },
   fromLabel: { fontFamily: fonts.sans, fontSize: 11, color: colors.t2, marginBottom: 2 },
   fromPrice: { maxWidth: 170, fontFamily: fonts.sansBold, fontSize: 16, color: colors.accent },
   bookBtn: {
-    minWidth: 90,
+    minWidth: 96,
+    minHeight: 38,
     alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.accentSoft,
     borderRadius: radius.pill,
     borderWidth: 1,
     borderColor: colors.accentBorder,
     paddingHorizontal: 14,
     paddingVertical: 9,
+    flexShrink: 0,
   },
   bookBtnText: { fontFamily: fonts.sansBold, fontSize: 12, color: colors.accent },
 });

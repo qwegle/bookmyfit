@@ -34,6 +34,19 @@ export class CashfreeService {
     };
   }
 
+  private normalizePhone(phone?: string): string {
+    const digits = String(phone || '').replace(/\D/g, '');
+    if (digits.length === 10) return digits;
+    if (digits.length === 12 && digits.startsWith('91')) return digits.slice(2);
+    return '9999999999';
+  }
+
+  private normalizeEmail(email: string | undefined, phone: string): string {
+    const value = String(email || '').trim();
+    if (value.includes('@')) return value;
+    return `${phone}@bookmyfit.in`;
+  }
+
   /**
    * Create a Cashfree order. Returns payment_session_id which the
    * mobile/web client uses with the Cashfree SDK to render the checkout.
@@ -48,6 +61,8 @@ export class CashfreeService {
     notes?: Record<string, any>;
   }) {
     if (this.mockModeEnabled) return this.createMockOrder(params.orderId);
+    const customerPhone = this.normalizePhone(params.customerPhone);
+    const customerEmail = this.normalizeEmail(params.customerEmail, customerPhone);
 
     const body = {
       order_id: params.orderId,
@@ -55,8 +70,8 @@ export class CashfreeService {
       order_currency: 'INR',
       customer_details: {
         customer_id: params.customerId,
-        customer_phone: params.customerPhone,
-        customer_email: params.customerEmail || `${params.customerPhone}@bookmyfit.in`,
+        customer_phone: customerPhone,
+        customer_email: customerEmail,
       },
       order_meta: {
         return_url: params.returnUrl || 'bookmyfit://payment-return?order_id={order_id}',
@@ -80,7 +95,8 @@ export class CashfreeService {
       if (!res.ok) {
         this.logger.warn(`Cashfree order failed: ${JSON.stringify(data)}`);
         if (this.mockModeEnabled) return this.createMockOrder(params.orderId);
-        throw new BadRequestException('Cashfree order creation failed');
+        const detail = data?.message || data?.type || data?.code || 'Cashfree order creation failed';
+        throw new BadRequestException(detail);
       }
       return {
         orderId: data.order_id,
