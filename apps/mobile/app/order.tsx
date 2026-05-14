@@ -34,7 +34,8 @@ export default function Order() {
   const ptTotal = hasPt ? 1600 * ptMonths : 0;
   const total = Number(totalAmount) || 0;
   const gst = Math.round(total / (1 + GST_RATE) * GST_RATE);
-  const planBase = total - gst - ptTotal;
+  const subtotalBeforeTax = Math.max(0, total - gst);
+  const planBase = Math.max(0, subtotalBeforeTax - ptTotal);
   const isMultigym = planId === 'multi_gym';
   const selectedGymName = gymName || (isMultigym ? 'Any gym on BookMyFit' : 'Selected Gym');
 
@@ -59,8 +60,8 @@ export default function Order() {
   const applyCoupon = async () => {
     if (!coupon.trim()) return;
     try {
-      const result: any = await couponsApi.validate(coupon, planBase, planId || 'subscription');
-      const d = Math.min(planBase, Math.round(Number(result?.discount || 0)));
+      const result: any = await couponsApi.validate(coupon, subtotalBeforeTax, planId || 'subscription');
+      const d = Math.min(subtotalBeforeTax, Math.round(Number(result?.discount || 0)));
       setDiscount(d);
       setCouponApplied(true);
       Alert.alert('Coupon Applied!', `Rs ${d.toLocaleString('en-IN')} discount added.`);
@@ -69,7 +70,9 @@ export default function Order() {
     }
   };
 
-  const finalTotal = Math.max(0, total - discount);
+  const discountedSubtotal = Math.max(0, subtotalBeforeTax - discount);
+  const payableGst = Math.round(discountedSubtotal * GST_RATE);
+  const finalTotal = Math.max(1, discountedSubtotal + payableGst);
 
   const handlePay = async () => {
     setLoading(true);
@@ -200,7 +203,7 @@ export default function Order() {
           )}
           <View style={s.row}>
             <Text style={s.rowLabel}>GST (18%)</Text>
-            <Text style={s.rowVal}>₹{gst.toLocaleString('en-IN')}</Text>
+            <Text style={s.rowVal}>₹{payableGst.toLocaleString('en-IN')}</Text>
           </View>
           {couponApplied && (
             <View style={s.row}>

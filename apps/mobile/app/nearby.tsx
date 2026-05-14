@@ -66,7 +66,7 @@ export default function NearbyScreen() {
       setUserPos(toScreen(lat, lng));
 
       try {
-        const res = await fetch(`${API_BASE}/api/v1/gyms?status=active&limit=20`);
+        const res = await fetch(`${API_BASE}/api/v1/gyms?limit=20`);
         if (res.ok) {
           const data = await res.json();
           const list = Array.isArray(data) ? data : data?.data || data?.gyms || data?.items || [];

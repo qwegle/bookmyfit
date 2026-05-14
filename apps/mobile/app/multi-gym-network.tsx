@@ -30,7 +30,7 @@ export default function MultiGymNetwork() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    gymsApi.list({ page: 1, limit: 50, status: 'active' })
+    gymsApi.list({ page: 1, limit: 100 })
       .then((data: any) => {
         const list = Array.isArray(data) ? data : data?.gyms || data?.data || [];
         setGyms(list);

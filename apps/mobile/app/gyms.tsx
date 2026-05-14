@@ -71,7 +71,7 @@ export default function GymListingPage() {
     else setLoadingMore(true); // category switch: spinner, keep existing list
     try {
       setLoadError('');
-      const params: any = { page: pg, limit: 50, status: 'active' }; // fetch more so local filter has data
+      const params: any = { page: pg, limit: 100 }; // show every gym returned by the database, then filter locally
       const res: any = await gymsApi.list(params);
       const raw = Array.isArray(res) ? res : res?.gyms || res?.data || [];
       const list = filterByCat(raw, cat);
@@ -94,8 +94,8 @@ export default function GymListingPage() {
   }, [activeCategory]);
 
   useEffect(() => {
-    if (paramCat && paramCat !== activeCategory) setActiveCategory(paramCat);
-  }, [paramCat, activeCategory]);
+    if (paramCat) setActiveCategory(paramCat);
+  }, [paramCat]);
 
   const loadSubscriptionAccess = useCallback(() => {
     subscriptionsApi.mySubscriptions()
@@ -201,8 +201,9 @@ export default function GymListingPage() {
             <TouchableOpacity
               style={[s.chip, active && s.chipActive]}
               onPress={() => setActiveCategory(cat.id)}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
             >
-              {active && <View style={s.chipDot} />}
+              <View style={[s.chipDot, !active && s.chipDotInactive]} />
               <Text style={[s.chipText, active && s.chipTextActive]} numberOfLines={1}>{cat.label}</Text>
             </TouchableOpacity>
           );
@@ -348,7 +349,7 @@ function GymCard({
           </View>
           {tags.length > 0 && (
             <View style={s.tagsRow}>
-              {tags.map((t) => <View key={t} style={s.tag}><Text style={s.tagText}>{t}</Text></View>)}
+              {tags.map((t) => <View key={t} style={s.tag}><Text style={s.tagText} numberOfLines={1}>{t}</Text></View>)}
             </View>
           )}
         </View>
@@ -411,7 +412,7 @@ const s = StyleSheet.create({
   searchInput: { flex: 1, fontFamily: fonts.sans, fontSize: 13, color: '#fff' },
 
   // Chips
-  chipScroller:  { flexGrow: 0, maxHeight: 42, marginBottom: 0 },
+  chipScroller:  { flexGrow: 0, height: 42, marginBottom: 0 },
   chipList:      { paddingHorizontal: 16, paddingTop: 0, paddingBottom: 4, gap: 8 },
   skeletonList:  { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 16, gap: 12 },
   listContent:   { paddingHorizontal: 16, paddingTop: 4, paddingBottom: 40, gap: 12 },
@@ -422,11 +423,12 @@ const s = StyleSheet.create({
   },
   chipActive:    { backgroundColor: colors.accentSoft, borderColor: colors.accentBorder },
   chipDot:       { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.accent },
+  chipDotInactive: { backgroundColor: 'transparent' },
   chipText:      { fontFamily: fonts.sansMedium, fontSize: 11, color: colors.t2 },
   chipTextActive:{ color: colors.accent },
 
   // Gym card
-  gymCard:  { flexDirection: 'row', gap: 12, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: radius.xl, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 10 },
+  gymCard:  { minHeight: 122, flexDirection: 'row', alignItems: 'stretch', gap: 12, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: radius.xl, borderWidth: 1, borderColor: 'rgba(255,255,255,0.07)', padding: 10 },
   gymThumb: { width: 90, height: 100, borderRadius: radius.md, overflow: 'hidden' },
   discountBadge: { position: 'absolute', top: 6, left: 6, backgroundColor: colors.accent, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
   discountText:  { fontFamily: fonts.sansBold, fontSize: 8, color: '#060606' },
@@ -440,11 +442,11 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(0,212,106,0.12)', borderWidth: 1, borderColor: 'rgba(0,212,106,0.35)',
   },
   subscribedText: { fontFamily: fonts.sansBold, fontSize: 8, color: colors.accent },
-  metaRow:  { flexDirection: 'row', alignItems: 'center', gap: 3, flexWrap: 'wrap', marginBottom: 6 },
+  metaRow:  { flexDirection: 'row', alignItems: 'center', gap: 3, flexWrap: 'nowrap', marginBottom: 6, overflow: 'hidden' },
   ratingText:{ fontFamily: fonts.sansBold, fontSize: 11, color: '#FBBF24' },
   divider:  { color: colors.t3, fontSize: 11, marginHorizontal: 2 },
-  metaText: { fontFamily: fonts.sans, fontSize: 10, color: colors.t2 },
-  tagsRow:  { flexDirection: 'row', gap: 5, flexWrap: 'wrap', marginBottom: 6 },
+  metaText: { minWidth: 0, fontFamily: fonts.sans, fontSize: 10, color: colors.t2 },
+  tagsRow:  { flexDirection: 'row', gap: 5, flexWrap: 'nowrap', marginBottom: 6, overflow: 'hidden' },
   tag:      { backgroundColor: 'rgba(255,255,255,0.07)', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
   tagText:  { fontFamily: fonts.sansMedium, fontSize: 9, color: colors.t2 },
   cardFooter: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 },

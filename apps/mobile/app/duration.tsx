@@ -95,9 +95,9 @@ export default function Duration() {
     if (!monthlyBase) return [];
     return [
       { months: 1, label: '1 Month', sublabel: 'Most flexible', price: monthlyBase, save: null, isDayPass: false, hot: false },
-      { months: 3, label: '3 Months', sublabel: 'Popular choice', price: Math.round(monthlyBase * 3 * 0.92), save: 'Save 8%', isDayPass: false, hot: false },
-      { months: 6, label: '6 Months', sublabel: 'Best value', price: Math.round(monthlyBase * 6 * 0.85), save: 'Save 15%', isDayPass: false, hot: false },
-      { months: 12, label: '12 Months', sublabel: 'Maximum savings', price: Math.round(monthlyBase * 12 * 0.75), save: 'Save 25%', isDayPass: false, hot: false },
+      { months: 3, label: '3 Months', sublabel: 'Quarterly access', price: Math.round(monthlyBase * 3), save: null, isDayPass: false, hot: false },
+      { months: 6, label: '6 Months', sublabel: 'Half-year access', price: Math.round(monthlyBase * 6), save: null, isDayPass: false, hot: false },
+      { months: 12, label: '12 Months', sublabel: 'Annual access', price: Math.round(monthlyBase * 12), save: null, isDayPass: false, hot: false },
     ];
   }, [monthlyBase, isPlanDayPass, planId, gymPlanOptions]);
 

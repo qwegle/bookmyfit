@@ -437,9 +437,9 @@ class HomepageController {
 
       if (section.type === 'featured_gyms') {
         if (section.featuredGymIds?.length > 0) {
-          section.gyms = await this.gymRepo.find({ where: { id: In(section.featuredGymIds), status: 'active' as any } });
+          section.gyms = await this.gymRepo.find({ where: { id: In(section.featuredGymIds) } });
         } else {
-          section.gyms = await this.gymRepo.find({ where: { status: 'active' as any }, take: section.gymLimit || 6 });
+          section.gyms = await this.gymRepo.find({ take: section.gymLimit || 6 });
         }
       }
 

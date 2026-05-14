@@ -272,8 +272,9 @@ export default function WellnessScreen() {
               key={f}
               style={[s.filterTab, activeFilter === f && s.filterTabActive]}
               onPress={() => setActiveFilter(f)}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
             >
-              <Text style={[s.filterTabText, activeFilter === f && s.filterTabTextActive]}>
+              <Text style={[s.filterTabText, activeFilter === f && s.filterTabTextActive]} numberOfLines={1}>
                 {f === 'all' ? 'All' : f === 'spa' ? 'Spa Centre' : 'Home Service'}
               </Text>
             </TouchableOpacity>
@@ -357,7 +358,7 @@ export default function WellnessScreen() {
                   <View style={s.tagsRow}>
                     {tags.slice(0, 3).map((tag, ti) => (
                       <View key={ti} style={s.tagPill}>
-                        <Text style={s.tagText}>{tag}</Text>
+                        <Text style={s.tagText} numberOfLines={1}>{tag}</Text>
                       </View>
                     ))}
                   </View>
@@ -455,6 +456,9 @@ const s = StyleSheet.create({
   // Filter tabs
   filterTabs: { flexDirection: 'row', paddingHorizontal: 16, gap: 8, marginBottom: 16, marginTop: 4 },
   filterTab: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 7, borderRadius: 50,
     backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
   },
@@ -503,15 +507,15 @@ const s = StyleSheet.create({
     flexDirection: 'row', marginHorizontal: 16, marginBottom: 12,
     backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 16,
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.10)', overflow: 'hidden',
-    minHeight: 166,
+    height: 166,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
     elevation: 6,
   },
-  partnerImgWrapper: { width: 122, minHeight: 166, position: 'relative', backgroundColor: colors.surface },
-  partnerImg: { width: 122, minHeight: 166, height: '100%', resizeMode: 'cover', backgroundColor: colors.surface },
+  partnerImgWrapper: { width: 122, height: 166, position: 'relative', backgroundColor: colors.surface },
+  partnerImg: { width: 122, height: 166, resizeMode: 'cover', backgroundColor: colors.surface },
   discountBadge: {
     position: 'absolute', top: 0, left: 0,
     backgroundColor: '#00D46A', paddingHorizontal: 6, paddingVertical: 3,
@@ -538,8 +542,9 @@ const s = StyleSheet.create({
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   locationText: { fontFamily: fonts.sans, fontSize: 11, color: colors.t2, flex: 1 },
 
-  tagsRow: { flexDirection: 'row', gap: 5, flexWrap: 'wrap' },
+  tagsRow: { flexDirection: 'row', gap: 5, flexWrap: 'nowrap', overflow: 'hidden' },
   tagPill: {
+    maxWidth: 82,
     paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6,
     backgroundColor: 'rgba(255,255,255,0.07)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
   },

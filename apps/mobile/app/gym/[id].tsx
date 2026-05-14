@@ -133,6 +133,7 @@ export default function GymDetail() {
   const [trainers, setTrainers] = useState<any[]>([]);
   const [reviews, setReviews] = useState<any[]>([]);
   const [gymPlans, setGymPlans] = useState<any[]>([]);
+  const [gymPlansLoading, setGymPlansLoading] = useState(false);
   const [sessionSlots, setSessionSlots] = useState<any[]>([]);
   const [sessionTypes, setSessionTypes] = useState<any[]>([]);
   const [activeTypeFilter, setActiveTypeFilter] = useState<string>('all');
@@ -170,6 +171,7 @@ export default function GymDetail() {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
+    setGymPlans([]);
     gymsApi.getById(id as string)
       .then((data: any) => {
         const g = data?.gym || data;
@@ -178,12 +180,14 @@ export default function GymDetail() {
       .catch(() => setGym(fallbackGym()))
       .finally(() => setLoading(false));
 
+    setGymPlansLoading(true);
     api.get(`/gym-plans/by-gym/${id}`)
       .then((data: any) => {
         const plans = Array.isArray(data) ? data : data?.plans || [];
         setGymPlans(plans);
       })
-      .catch(() => setGymPlans([]));
+      .catch(() => setGymPlans([]))
+      .finally(() => setGymPlansLoading(false));
 
     // Load sessions and session types for today
     loadSlots(id as string, new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().split('T')[0]);
@@ -740,8 +744,10 @@ export default function GymDetail() {
           ) : (
             <>
               <View>
-                <Text style={s.footLabel}>{startingMonthlyPrice ? 'Starting from' : 'Membership'}</Text>
-                {startingMonthlyPrice ? (
+                <Text style={s.footLabel}>{gymPlansLoading ? 'Pricing' : startingMonthlyPrice ? 'Starting from' : 'Membership'}</Text>
+                {gymPlansLoading ? (
+                  <Text style={s.footPrice}>Loading...</Text>
+                ) : startingMonthlyPrice ? (
                   <Text style={s.footPrice}>
                     ₹{Math.round(startingMonthlyPrice).toLocaleString('en-IN')}
                     <Text style={s.footPer}>/mo</Text>

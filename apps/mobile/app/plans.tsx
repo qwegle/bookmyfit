@@ -119,6 +119,7 @@ export default function PlansScreen() {
   const [plansLoading, setPlansLoading] = useState(true);
   const [selectedGym, setSelectedGym] = useState<any>(null);
   const [gymPlans, setGymPlans] = useState<any[]>([]);
+  const [gymPricingLoading, setGymPricingLoading] = useState(false);
   const [activeGymSubIds, setActiveGymSubIds] = useState<Set<string>>(new Set());
   const [activeGymSubMap, setActiveGymSubMap] = useState<Map<string, any>>(new Map());
   const [hasMultiGymSub, setHasMultiGymSub] = useState(false);
@@ -138,9 +139,13 @@ export default function PlansScreen() {
     if (!gymId) {
       setSelectedGym(null);
       setGymPlans([]);
+      setGymPricingLoading(false);
       return () => { active = false; };
     }
 
+    setSelectedGym(null);
+    setGymPlans([]);
+    setGymPricingLoading(true);
     Promise.all([
       gymsApi.getById(gymId).catch(() => null),
       gymPlansApi.forGym(gymId).catch(() => []),
@@ -148,6 +153,8 @@ export default function PlansScreen() {
       if (!active) return;
       setSelectedGym(gymRes?.gym || gymRes || null);
       setGymPlans(Array.isArray(planRes) ? planRes : planRes?.plans || []);
+    }).finally(() => {
+      if (active) setGymPricingLoading(false);
     });
 
     return () => { active = false; };
@@ -174,20 +181,22 @@ export default function PlansScreen() {
   const activeUntil = formatDateLabel(activeSelectedGymSub?.endDate || activeSelectedGymSub?.validUntil);
 
   const displayPlans: PlanCard[] = useMemo(() => {
-    const dayPrice = positiveNumber(selectedGym?.dayPassPrice)
-      || positiveNumber(serverPlans?.day_pass?.basePrice);
+    const gymPriceLoading = !!gymId && gymPricingLoading;
+    const dayPrice = gymId
+      ? (positiveNumber(selectedGym?.dayPassPrice) || positiveNumber(serverPlans?.day_pass?.basePrice))
+      : positiveNumber(serverPlans?.day_pass?.basePrice);
     const activeGymPlans = gymPlans.filter((plan) => plan?.isActive !== false && positiveNumber(plan?.price || plan?.basePrice));
     const sameMonthly = minMonthlyPriceFromGymPlans(activeGymPlans);
-    const sameGymUnavailable = !!gymId && !plansLoading && activeGymPlans.length === 0;
+    const sameGymUnavailable = !!gymId && !plansLoading && !gymPriceLoading && activeGymPlans.length === 0;
     const multiMonthly = positiveNumber(serverPlans?.multi_gym?.basePrice);
 
     return PLANS.map((plan) => {
       if (plan.id === 'day_pass') {
         return {
           ...plan,
-          price: dayPrice ? formatPrice(dayPrice) : (plansLoading ? 'Loading...' : (gymId ? 'Unavailable' : 'Select gym')),
+          price: dayPrice && !gymPriceLoading ? formatPrice(dayPrice) : ((plansLoading || gymPriceLoading) ? 'Loading...' : (gymId ? 'Unavailable' : 'Select gym')),
           priceUnit: '/ day',
-          priceNumber: dayPrice,
+          priceNumber: gymPriceLoading ? null : dayPrice,
           features: serverPlans?.day_pass?.features || plan.features,
         };
       }
@@ -195,9 +204,9 @@ export default function PlansScreen() {
       if (plan.id === 'same_gym') {
         return {
           ...plan,
-          price: sameMonthly ? formatPrice(sameMonthly) : (plansLoading ? 'Loading...' : (gymId ? 'Not set' : 'Select gym')),
+          price: sameMonthly && !gymPriceLoading ? formatPrice(sameMonthly) : ((plansLoading || gymPriceLoading) ? 'Loading...' : (gymId ? 'Not set' : 'Select gym')),
           priceUnit: '/ month',
-          priceNumber: sameMonthly,
+          priceNumber: gymPriceLoading ? null : sameMonthly,
           tagline: sameGymUnavailable ? 'This gym has not added membership plans yet' : plan.tagline,
           features: activeGymPlans.length
             ? (serverPlans?.same_gym?.features || plan.features)
@@ -218,7 +227,7 @@ export default function PlansScreen() {
         features: serverPlans?.multi_gym?.features || plan.features,
       };
     });
-  }, [gymId, gymPlans, plansLoading, selectedGym, selectedGymDisplayName, serverPlans]);
+  }, [gymId, gymPlans, gymPricingLoading, plansLoading, selectedGym, selectedGymDisplayName, serverPlans]);
 
   const handleSelect = (plan: PlanCard) => {
     if (plan.id === 'multi_gym' && hasMultiGymSub) {
@@ -265,7 +274,9 @@ export default function PlansScreen() {
   };
 
   const ctaLabel = (plan: PlanCard) =>
-    plan.id === 'multi_gym' && hasMultiGymSub
+    !plan.priceNumber && (plansLoading || (!!gymId && gymPricingLoading))
+      ? 'Loading...'
+      : plan.id === 'multi_gym' && hasMultiGymSub
       ? (gymId ? 'Book Slot' : 'Browse Gyms')
       : hasSelectedGymAccess && (plan.id === 'same_gym' || plan.id === 'day_pass')
         ? 'Book Slot'
@@ -376,9 +387,11 @@ export default function PlansScreen() {
               style={[
                 s.ctaBtn,
                 { backgroundColor: plan.accent },
+                (!plan.priceNumber && (plansLoading || (!!gymId && gymPricingLoading))) && s.ctaBtnDisabled,
                 ((hasSelectedGymAccess && (plan.id === 'same_gym' || plan.id === 'day_pass')) || (plan.id === 'multi_gym' && hasMultiGymSub)) && s.ctaBtnSubscribed,
               ]}
               onPress={() => handleSelect(plan)}
+              disabled={!plan.priceNumber && (plansLoading || (!!gymId && gymPricingLoading))}
               activeOpacity={0.85}
             >
               <Text
@@ -534,6 +547,7 @@ const s = StyleSheet.create({
     marginHorizontal: 16, marginBottom: 16, marginTop: 12,
     borderRadius: 12, paddingVertical: 14,
   },
+  ctaBtnDisabled: { opacity: 0.62 },
   ctaBtnSubscribed: {
     backgroundColor: colors.accentSoft,
     borderWidth: 1,

@@ -87,8 +87,8 @@ export default function SpaCentresScreen() {
           {CATEGORIES.map((item) => {
             const active = item === category;
             return (
-              <TouchableOpacity key={item} style={[s.chip, active && s.chipActive]} onPress={() => setCategory(item)}>
-                {active && <View style={s.chipDot} />}
+              <TouchableOpacity key={item} style={[s.chip, active && s.chipActive]} onPress={() => setCategory(item)} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
+                <View style={[s.chipDot, !active && s.chipDotInactive]} />
                 <Text style={[s.chipText, active && s.chipTextActive]}>{item}</Text>
               </TouchableOpacity>
             );
@@ -172,6 +172,7 @@ const s = StyleSheet.create({
   },
   chipActive: { backgroundColor: colors.accentSoft, borderColor: colors.accentBorder },
   chipDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.accent },
+  chipDotInactive: { backgroundColor: 'transparent' },
   chipText: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.t2 },
   chipTextActive: { color: colors.accent },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },

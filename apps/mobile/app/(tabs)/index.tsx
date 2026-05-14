@@ -164,10 +164,10 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/v1/gyms?status=active&limit=6`)
+    fetch(`${API_BASE}/api/v1/gyms?limit=100`)
       .then((r) => r.json())
       .then((data: any) => {
-        setHomeGyms(listFrom(data, ['gyms']).slice(0, 6));
+        setHomeGyms(listFrom(data, ['gyms']));
       })
       .catch(() => setHomeGyms([]));
   }, []);
@@ -212,7 +212,7 @@ export default function Home() {
       }
 
       if (normalized.type === 'featured_gyms' && !normalized.gyms?.length && homeGyms.length) {
-        normalized.gyms = homeGyms;
+        normalized.gyms = homeGyms.slice(0, 6);
       }
 
       if (normalized.type === 'products' && !normalized.products?.length && homeProducts.length) {
@@ -477,7 +477,7 @@ function GymListingSection({
   multiGymSub: any;
   hasMultiGymSub: boolean;
 }) {
-  const gyms: any[] = (section.gyms || []).slice(0, 5);
+  const gyms: any[] = section.gyms || [];
   if (!gyms.length) return null;
 
   return (
@@ -525,7 +525,7 @@ function GymListingSection({
                   </View>
                   {hasAccess && (
                     <View style={s.gymListSubscribedBadge}>
-                      <Text style={s.gymListSubscribedText}>{accessLabel}</Text>
+                      <Text style={s.gymListSubscribedText} numberOfLines={1}>{accessLabel}</Text>
                     </View>
                   )}
                 </View>
@@ -799,7 +799,9 @@ const s = StyleSheet.create({
   gymListWrap: { marginHorizontal: 20, gap: 12 },
   gymListCard: {
     width: '100%',
+    minHeight: 116,
     flexDirection: 'row',
+    alignItems: 'stretch',
     gap: 12,
     padding: 10,
     borderRadius: radius.xl,
