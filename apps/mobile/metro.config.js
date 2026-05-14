@@ -9,6 +9,7 @@ const localModules = path.resolve(projectRoot, 'node_modules');
 
 const config = getDefaultConfig(projectRoot);
 
+config.server.unstable_serverRoot = projectRoot;
 config.watchFolders = [localModules, workspaceModules];
 config.resolver.nodeModulesPaths = [localModules, workspaceModules];
 
