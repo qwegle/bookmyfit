@@ -1,10 +1,11 @@
 import { Module, Controller, Get, Post, Put, Patch, Param, Body, Query, Injectable, UseGuards, Req, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository, Between, Brackets, In } from 'typeorm';
 import { paginate, paginatedResponse } from '../../common/pagination.helper';
 import { ApiTags } from '@nestjs/swagger';
 import { GymEntity, GymStatus } from '../../database/entities/gym.entity';
 import { SubscriptionEntity } from '../../database/entities/subscription.entity';
+import { UserEntity } from '../../database/entities/user.entity';
 import { CheckinEntity } from '../../database/entities/checkin.entity';
 import { AmenityEntity } from '../../database/entities/misc.entity';
 import { GymScheduleEntity } from '../../database/entities/gym-schedule.entity';
@@ -17,6 +18,7 @@ class GymsService {
   constructor(
     @InjectRepository(GymEntity) private readonly repo: Repository<GymEntity>,
     @InjectRepository(SubscriptionEntity) private readonly subs: Repository<SubscriptionEntity>,
+    @InjectRepository(UserEntity) private readonly users: Repository<UserEntity>,
     @InjectRepository(CheckinEntity) private readonly checkins: Repository<CheckinEntity>,
     @InjectRepository(AmenityEntity) private readonly amenities: Repository<AmenityEntity>,
     @InjectRepository(GymScheduleEntity) private readonly schedules: Repository<GymScheduleEntity>,
@@ -263,46 +265,108 @@ class GymsService {
     const limit = opts.limit || 20;
     const skip = (page - 1) * limit;
 
-    const qb = this.subs
+    const search = opts.search?.trim();
+
+    const makeBaseQuery = () => this.subs
       .createQueryBuilder('s')
-      .where(':gymId = ANY(s."gymIds")', { gymId: gym.id })
-      .orderBy('s."createdAt"', 'DESC');
+      .leftJoin(UserEntity, 'u', 'u.id = s."userId"')
+      .where(new Brackets((where) => {
+        where
+          .where(':gymId = ANY(s."gymIds")', { gymId: gym.id })
+          .orWhere(`(
+            s."planType" = :multiGym
+            AND EXISTS (
+              SELECT 1
+              FROM checkins c
+              WHERE c."subscriptionId" = s.id
+                AND c."gymId" = :gymId
+                AND c.status = :checkinSuccess
+            )
+          )`, { multiGym: 'multi_gym', checkinSuccess: 'success' });
+      }));
 
-    if (opts.status && opts.status !== 'all') {
-      qb.andWhere('s.status = :status', { status: opts.status });
-    }
-    if (opts.search) {
-      qb.andWhere('(s."userId" ILIKE :q)', { q: `%${opts.search}%` });
-    }
+    const applySearch = (qb: ReturnType<typeof makeBaseQuery>) => {
+      if (!search) return qb;
+      return qb.andWhere(new Brackets((where) => {
+        where
+          .where('s."userId"::text ILIKE :q', { q: `%${search}%` })
+          .orWhere('u.name ILIKE :q', { q: `%${search}%` })
+          .orWhere('u.phone ILIKE :q', { q: `%${search}%` })
+          .orWhere('u.email ILIKE :q', { q: `%${search}%` });
+      }));
+    };
 
+    const applyStatus = (qb: ReturnType<typeof makeBaseQuery>) => {
+      if (!opts.status || opts.status === 'all') return qb;
+      if (opts.status === 'expired') return qb.andWhere('s."endDate" < CURRENT_DATE').andWhere('s.status != :cancelled', { cancelled: 'cancelled' });
+      if (opts.status === 'active') {
+        return qb.andWhere('s.status = :status', { status: 'active' }).andWhere('s."endDate" >= CURRENT_DATE');
+      }
+      return qb.andWhere('s.status = :status', { status: opts.status });
+    };
+
+    const qb = applyStatus(applySearch(makeBaseQuery())).orderBy('s."createdAt"', 'DESC');
     const [subs, total] = await qb.skip(skip).take(limit).getManyAndCount();
+
+    const statsBase = applySearch(makeBaseQuery());
+    const [activeCount, expiredCount, cancelledCount] = await Promise.all([
+      statsBase.clone().andWhere('s.status = :status', { status: 'active' }).andWhere('s."endDate" >= CURRENT_DATE').getCount(),
+      statsBase.clone().andWhere('s."endDate" < CURRENT_DATE').andWhere('s.status != :cancelled', { cancelled: 'cancelled' }).getCount(),
+      statsBase.clone().andWhere('s.status = :status', { status: 'cancelled' }).getCount(),
+    ]);
 
     // Enrich with today's check-in count per user
     const today = new Date(); today.setHours(0,0,0,0);
     const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    const userIds = [...new Set(subs.map((s) => s.userId).filter(Boolean))];
+    const users = userIds.length ? await this.users.find({ where: { id: In(userIds) } }) : [];
+    const userMap = new Map(users.map((u) => [u.id, u]));
+    const todayRows = userIds.length ? await this.checkins
+      .createQueryBuilder('c')
+      .select('c."userId"', 'userId')
+      .addSelect('COUNT(*)', 'count')
+      .where('c."gymId" = :gymId', { gymId: gym.id })
+      .andWhere('c.status = :status', { status: 'success' })
+      .andWhere('c."checkinTime" >= :today AND c."checkinTime" < :tomorrow', { today, tomorrow })
+      .andWhere('c."userId" IN (:...userIds)', { userIds })
+      .groupBy('c."userId"')
+      .getRawMany() : [];
+    const todayCheckins = new Map(todayRows.map((row: any) => [row.userId, Number(row.count || 0)]));
+    const todayIso = new Date().toISOString().slice(0, 10);
 
     const data = subs.map(s => {
-      const endDate = s.endDate ? new Date(s.endDate) : null;
-      const isExpired = endDate ? endDate < new Date() : false;
+      const user = userMap.get(s.userId);
+      const isExpired = s.endDate ? String(s.endDate).slice(0, 10) < todayIso : false;
       const gymCount = (s.gymIds || []).length;
+      const canDeactivate = s.planType !== 'multi_gym' && (s.gymIds || []).includes(gym.id);
+      (s as any).userPhone = user?.phone || user?.email || '-';
       return {
         id: s.id,
         userId: s.userId,
-        name: (s as any).userName || `User-${s.userId.slice(0, 6)}`,
+        name: user?.name || user?.email || `User-${s.userId.slice(0, 6)}`,
         phone: (s as any).userPhone || '—',
         planType: s.planType,
-        gymType: gymCount <= 1 ? 'Single Gym' : 'Multi Gym',
-        gymCount,
-        status: isExpired ? 'expired' : s.status,
+        gymType: s.planType === 'multi_gym' ? 'Multi Gym' : 'Single Gym',
+        gymCount: s.planType === 'multi_gym' ? Math.max(gymCount, 1) : gymCount,
+        status: s.status === 'cancelled' ? 'cancelled' : (isExpired ? 'expired' : s.status),
         subscriptionStatus: s.status,
         startDate: s.startDate,
         endDate: s.endDate,
         amountPaid: s.amountPaid,
         createdAt: s.createdAt,
+        todayCheckins: todayCheckins.get(s.userId) || 0,
+        canDeactivate,
       };
     });
 
-    return { data, total, page, limit, pages: Math.ceil(total / limit) };
+    return {
+      data,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+      stats: { total, active: activeCount, expired: expiredCount, cancelled: cancelledCount },
+    };
   }
 
   async deactivateMember(ownerId: string, subId: string) {
@@ -310,6 +374,7 @@ class GymsService {
     if (!gym) throw new NotFoundException('Gym not found');
     const sub = await this.subs.findOne({ where: { id: subId } });
     if (!sub) throw new NotFoundException('Subscription not found');
+    if (sub.planType === 'multi_gym') throw new ForbiddenException('Multi-gym passes are managed by the platform admin');
     if (!(sub.gymIds || []).includes(gym.id)) throw new NotFoundException('Member not in this gym');
     await this.subs.update(subId, { status: 'cancelled' as any });
     return { success: true, message: 'Member subscription deactivated' };
@@ -324,16 +389,31 @@ class GymsService {
       order: { checkinTime: 'DESC' },
       skip, take,
     });
+    const subIds = [...new Set(data.map((c) => c.subscriptionId).filter(Boolean))];
+    const userIds = [...new Set(data.map((c) => c.userId).filter(Boolean))];
+    const [subs, users] = await Promise.all([
+      subIds.length ? this.subs.find({ where: { id: In(subIds) } }) : [],
+      userIds.length ? this.users.find({ where: { id: In(userIds) } }) : [],
+    ]);
+    const subMap = new Map<string, SubscriptionEntity>(subs.map((s): [string, SubscriptionEntity] => [s.id, s]));
+    const userMap = new Map<string, UserEntity>(users.map((u): [string, UserEntity] => [u.id, u]));
     const ratePerDay = Number((gym as any).ratePerDay ?? 50);
     const commissionRate = Number(gym.commissionRate ?? 15) / 100;
     const gymShare = ratePerDay * (1 - commissionRate);
     const adminShare = ratePerDay * commissionRate;
-    const enriched = data.map(c => ({
-      ...c,
-      ratePerDay,
-      gymEarns: c.status === 'success' ? gymShare : 0,
-      adminEarns: c.status === 'success' ? adminShare : 0,
-    }));
+    const enriched = data.map(c => {
+      const sub = subMap.get(c.subscriptionId);
+      const user = userMap.get(c.userId);
+      return {
+        ...c,
+        planType: sub?.planType || null,
+        userName: user?.name || null,
+        userPhone: user?.phone || user?.email || null,
+        ratePerDay,
+        gymEarns: c.status === 'success' ? gymShare : 0,
+        adminEarns: c.status === 'success' ? adminShare : 0,
+      };
+    });
     return { data: enriched, total, page: p, limit: l, pages: Math.ceil(total / l), gym: { name: gym.name, ratePerDay, commissionRate: gym.commissionRate } };
   }
 
@@ -622,7 +702,7 @@ class GymsController {
 }
 
 @Module({
-  imports: [TypeOrmModule.forFeature([GymEntity, SubscriptionEntity, CheckinEntity, AmenityEntity, GymScheduleEntity])],
+  imports: [TypeOrmModule.forFeature([GymEntity, SubscriptionEntity, UserEntity, CheckinEntity, AmenityEntity, GymScheduleEntity])],
   controllers: [GymsController],
   providers: [GymsService],
   exports: [GymsService],

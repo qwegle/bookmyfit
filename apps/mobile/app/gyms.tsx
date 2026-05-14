@@ -351,7 +351,8 @@ function GymCard({
           </View>
           <TouchableOpacity
             style={[s.viewBtn, hasAccess && s.bookBtn]}
-            onPress={() => {
+            onPress={(event: any) => {
+              event?.stopPropagation?.();
               if (hasAccess) router.push({ pathname: '/slots', params: { gymId: gid } } as any);
               else router.push({ pathname: '/plans', params: { gymId: gid, gymName: name } } as any);
             }}

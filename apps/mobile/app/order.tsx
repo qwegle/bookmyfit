@@ -92,17 +92,28 @@ export default function Order() {
       const subId = subRecord?.id || subRecord?._id;
       const orderId = paymentInfo?.orderId || result?.orderId;
       const sessionId = paymentInfo?.paymentSessionId || result?.paymentSessionId;
+      const validUntil = formatDateLabel(subRecord?.endDate)
+        || new Date(Date.now() + Math.max(months, 1) * 30 * 24 * 3600 * 1000)
+          .toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      const paidAmount = String(subRecord?.amountPaid ?? finalTotal);
 
       if (sessionId && orderId && !paymentInfo?.mock) {
         router.push({
           pathname: '/payment-webview',
-          params: { orderId, sessionId, planId: planId || '', gymId: gymId || '', gymName: selectedGymName, subId: subId || '' },
+          params: {
+            orderId,
+            sessionId,
+            planId: planId || '',
+            planName: planName || 'Standard Plan',
+            gymId: gymId || '',
+            gymName: selectedGymName,
+            subId: subId || '',
+            amountPaid: paidAmount,
+            validUntil,
+          },
         });
       } else {
         // Dev mode or mock payment — subscription already activated by backend
-        const validUntil = formatDateLabel(subRecord?.endDate)
-          || new Date(Date.now() + Math.max(months, 1) * 30 * 24 * 3600 * 1000)
-            .toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
         router.replace({
           pathname: '/success',
           params: {
@@ -110,7 +121,7 @@ export default function Order() {
             planName: planName || 'Standard Plan',
             gymName: selectedGymName,
             validUntil,
-            amountPaid: String(subRecord?.amountPaid ?? finalTotal),
+            amountPaid: paidAmount,
             subscriptionId: subId || 'NEW',
             planId: planId || '',
             gymId: gymId || '',

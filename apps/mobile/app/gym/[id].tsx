@@ -227,7 +227,7 @@ export default function GymDetail() {
 
   const bookSlot = async (slotId: string) => {
     if (!activeSub) {
-      router.push({ pathname: '/plans', params: { gymId: id } } as any);
+      router.push({ pathname: '/plans', params: { gymId: id, gymName: name } } as any);
       return;
     }
     setBookingLoading(slotId);
@@ -254,7 +254,7 @@ export default function GymDetail() {
       const msg = (e?.message || '');
       if (msg.includes('subscription')) {
         Alert.alert('No Active Pass', 'You need an active pass to book sessions.', [
-          { text: 'View Plans', onPress: () => router.push({ pathname: '/plans', params: { gymId: id } } as any) },
+          { text: 'View Plans', onPress: () => router.push({ pathname: '/plans', params: { gymId: id, gymName: name } } as any) },
           { text: 'Cancel', style: 'cancel' },
         ]);
       } else {
@@ -704,7 +704,7 @@ export default function GymDetail() {
                     <Text style={s.footPer}>/mo</Text>
                   </Text>
                 ) : (
-                  <Text style={s.footPrice}>View plans</Text>
+                  <Text style={s.footPrice}>Plans</Text>
                 )}
                 {dayPassPrice ? (
                   <Text style={[s.footPer, { color: '#ff6b35', fontSize: 10 }]}>
@@ -717,7 +717,7 @@ export default function GymDetail() {
                 onPress={() => router.push({ pathname: '/plans', params: { gymId: id, gymName: name } } as any)}
                 activeOpacity={0.9}
               >
-                <Text style={s.ctaText}>Get a Membership</Text>
+                <Text style={s.ctaText}>View Plans</Text>
                 <IconArrowRight size={16} color="#000" />
               </TouchableOpacity>
             </>

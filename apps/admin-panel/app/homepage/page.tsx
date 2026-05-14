@@ -27,7 +27,6 @@ const DEFAULT_SECTIONS: SectionConfig[] = [
   { order: 3, name: 'Workout Categories', type: 'Horizontal Scroll', status: 'Active', items: 8 },
   { order: 4, name: 'Store Picks', type: 'Grid', status: 'Active', items: 4 },
   { order: 5, name: 'Trending Near You', type: 'List', status: 'Draft', items: 0 },
-  { order: 6, name: 'Member Testimonials', type: 'Carousel', status: 'Active', items: 5 },
 ];
 
 function backendToUi(backendSections: any[]): SectionConfig[] {

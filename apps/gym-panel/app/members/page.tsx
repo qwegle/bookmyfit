@@ -19,6 +19,8 @@ type Member = {
   endDate: string;
   amountPaid: number;
   createdAt: string;
+  todayCheckins?: number;
+  canDeactivate?: boolean;
 };
 
 const STATUS_FILTERS = [
@@ -30,18 +32,24 @@ const STATUS_FILTERS = [
 
 function PlanBadge({ plan }: { plan: string }) {
   const colors: Record<string, React.CSSProperties> = {
+    same_gym: { background: 'rgba(100,160,255,0.15)', color: '#64A0FF' },
+    day_pass: { background: 'rgba(255,180,0,0.15)', color: '#FFB400' },
+    multi_gym: { background: 'rgba(204,255,0,0.12)', color: 'var(--accent)' },
     elite: { background: 'rgba(180,120,255,0.18)', color: '#B478FF' },
     pro: { background: 'rgba(255,180,0,0.15)', color: '#FFB400' },
     max: { background: 'rgba(255,100,60,0.15)', color: '#FF6432' },
     individual: { background: 'rgba(100,160,255,0.15)', color: '#64A0FF' },
     corporate: { background: 'rgba(204,255,0,0.12)', color: 'var(--accent)' },
   };
-  const s = colors[plan?.toLowerCase()] || { background: 'rgba(255,255,255,0.08)', color: 'var(--t2)' };
-  return <span style={{ ...s, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>{plan}</span>;
+  const key = plan?.toLowerCase();
+  const labels: Record<string, string> = { same_gym: 'Same Gym', day_pass: 'Day Pass', multi_gym: 'Multi Gym' };
+  const s = colors[key] || { background: 'rgba(255,255,255,0.08)', color: 'var(--t2)' };
+  return <span style={{ ...s, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>{labels[key] || plan}</span>;
 }
 
 function GymTypeBadge({ type, count }: { type: string; count: number }) {
-  const isMulti = count > 1;
+  const isMulti = type?.toLowerCase().includes('multi') || count > 1;
+  const label = isMulti ? 'Multi Gym' : 'Single Gym';
   return (
     <span style={{
       background: isMulti ? 'rgba(204,255,0,0.12)' : 'rgba(255,255,255,0.06)',
@@ -49,6 +57,19 @@ function GymTypeBadge({ type, count }: { type: string; count: number }) {
       padding: '3px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600,
     }}>
       {isMulti ? `🏋️ ${count} Gyms` : '🏠 Single'}
+    </span>
+  );
+}
+
+function AccessBadge({ type, count }: { type: string; count: number }) {
+  const isMulti = type?.toLowerCase().includes('multi') || count > 1;
+  return (
+    <span style={{
+      background: isMulti ? 'rgba(204,255,0,0.12)' : 'rgba(255,255,255,0.06)',
+      color: isMulti ? 'var(--accent)' : 'var(--t2)',
+      padding: '3px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600,
+    }}>
+      {isMulti ? 'Multi Gym' : 'Single Gym'}
     </span>
   );
 }
@@ -99,6 +120,7 @@ export default function MembersPage() {
   const [limit, setLimit] = useState(20);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(1);
+  const [serverStats, setServerStats] = useState<{ total: number; active: number; expired: number; cancelled: number } | null>(null);
   const [confirm, setConfirm] = useState<{ id: string; name: string } | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -120,9 +142,16 @@ export default function MembersPage() {
       setMembers(rows);
       setTotal(res?.total ?? rows.length);
       setPages(res?.pages ?? 1);
+      setServerStats(res?.stats ? {
+        total: Number(res.stats.total ?? res.total ?? rows.length),
+        active: Number(res.stats.active ?? 0),
+        expired: Number(res.stats.expired ?? 0),
+        cancelled: Number(res.stats.cancelled ?? 0),
+      } : null);
     } catch {
       setError('Failed to load members. Please try again.');
       setMembers([]); setTotal(0); setPages(1);
+      setServerStats(null);
     } finally { setLoading(false); }
   }, [page, limit, debouncedQ, statusFilter]);
 
@@ -160,7 +189,7 @@ export default function MembersPage() {
     URL.revokeObjectURL(url);
   };
 
-  const stats = {
+  const stats = serverStats || {
     total,
     active: members.filter(m => m.status === 'active').length,
     expired: members.filter(m => m.status === 'expired').length,
@@ -286,7 +315,7 @@ export default function MembersPage() {
                         <div style={{ color: 'var(--t2)', fontSize: 11, fontFamily: 'monospace' }}>{m.phone}</div>
                       </td>
                       <td><PlanBadge plan={m.planType} /></td>
-                      <td><GymTypeBadge type={m.gymType} count={m.gymCount} /></td>
+                      <td><AccessBadge type={m.gymType} count={m.gymCount} /></td>
                       <td>
                         <div className="flex flex-col gap-1">
                           <StatusBadge status={m.status} />
@@ -311,7 +340,7 @@ export default function MembersPage() {
                       </td>
                       <td>
                         <div className="flex items-center gap-2">
-                          {m.status === 'active' && (
+                          {m.status === 'active' && m.canDeactivate !== false && (
                             <button
                               onClick={() => setConfirm({ id: m.id, name: m.name })}
                               disabled={actionLoading === m.id}

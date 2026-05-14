@@ -4,14 +4,16 @@ import { JwtModule } from '@nestjs/jwt';
 import { CheckinEntity } from '../../database/entities/checkin.entity';
 import { SubscriptionEntity } from '../../database/entities/subscription.entity';
 import { GymEntity } from '../../database/entities/gym.entity';
+import { UserEntity } from '../../database/entities/user.entity';
 import { FraudAlertEntity } from '../../database/entities/misc.entity';
 import { BookingQrEntity } from '../../database/entities/booking-qr.entity';
+import { SessionBookingEntity } from '../../database/entities/session-booking.entity';
 import { QrController } from './qr.controller';
 import { QrService } from './qr.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([CheckinEntity, SubscriptionEntity, GymEntity, FraudAlertEntity, BookingQrEntity]),
+    TypeOrmModule.forFeature([CheckinEntity, SubscriptionEntity, GymEntity, UserEntity, FraudAlertEntity, BookingQrEntity, SessionBookingEntity]),
     JwtModule.register({
       secret: process.env.QR_SECRET || 'qr-hmac-secret-change-me',
       signOptions: { algorithm: 'HS256' },

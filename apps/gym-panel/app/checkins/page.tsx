@@ -8,6 +8,8 @@ import Pagination from '../../components/Pagination';
 interface CheckIn {
   id: string;
   userId: string;
+  userName?: string;
+  userPhone?: string;
   checkinTime: string;
   status: string;
   planType?: string;
@@ -44,6 +46,8 @@ export default function GymCheckinsPage() {
       setCheckins(raw.map((c: any) => ({
         id: c.id,
         userId: c.userId ? `MBR-${String(c.userId).slice(0, 6).toUpperCase()}` : '—',
+        userName: c.userName,
+        userPhone: c.userPhone,
         checkinTime: c.checkinTime || c.createdAt || '',
         status: c.status || 'success',
         planType: c.planType,
@@ -120,7 +124,10 @@ export default function GymCheckinsPage() {
                 ? <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--t2)', padding: '40px 0' }}>No check-ins recorded yet</td></tr>
                 : checkins.map(c => (
                   <tr key={c.id}>
-                    <td style={{ fontWeight: 600, color: '#fff', fontFamily: 'monospace', fontSize: 12 }}>{c.userId}</td>
+                    <td>
+                      <div style={{ fontWeight: 600, color: '#fff', fontSize: 13 }}>{c.userName || c.userId}</div>
+                      {c.userPhone && <div style={{ color: 'var(--t2)', fontSize: 11, fontFamily: 'monospace' }}>{c.userPhone}</div>}
+                    </td>
                     <td style={{ color: 'var(--t2)', fontSize: 12 }}>
                       {c.checkinTime ? new Date(c.checkinTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
                     </td>

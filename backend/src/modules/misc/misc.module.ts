@@ -402,24 +402,6 @@ const DEFAULT_HOMEPAGE_CONFIG = {
     { id: 'categories', type: 'categories', title: 'Browse by Category', visible: true, order: 1 },
     { id: 'featured_gyms', type: 'featured_gyms', title: 'Featured Gyms', visible: true, order: 2, featuredGymIds: [], gymLimit: 6 },
     { id: 'products', type: 'products', title: 'Shop Fitness Store', visible: true, order: 3, productCategory: null, featuredProductIds: [], productLimit: 5 },
-    {
-      id: 'trust', type: 'trust', title: 'Why BookMyFit?', visible: true, order: 4,
-      items: [
-        { icon: 'shield',      label: 'Verified Gyms',   sub: 'KYC guaranteed' },
-        { icon: 'star',        label: 'Top Rated',       sub: 'Quality assured' },
-        { icon: 'bolt',        label: 'Instant Booking', sub: 'In seconds' },
-        { icon: 'headphones',  label: '24/7 Support',    sub: 'Always here' },
-      ],
-    },
-    {
-      id: 'testimonials', type: 'testimonials', title: 'What Members Say', visible: true, order: 5,
-      items: [
-        { name: 'Priya S.',    text: 'BookMyFit changed how I work out. I visit 3 different gyms a week now!', rating: 5, avatar: 'P' },
-        { name: 'Rahul M.',    text: 'The day pass system is brilliant. No more annual lock-ins.', rating: 5, avatar: 'R' },
-        { name: 'Ananya K.',   text: 'Yoga + gym in one app, one subscription. Exactly what I needed.', rating: 5, avatar: 'A' },
-        { name: 'Dev P.',      text: 'Corporate plan sorted. My whole team uses it — great value.', rating: 5, avatar: 'D' },
-      ],
-    },
   ],
 };
 
@@ -434,10 +416,11 @@ class HomepageController {
 
   private async loadConfig(): Promise<any> {
     const row = await this.configRepo.findOne({ where: { key: HOMEPAGE_CONFIG_KEY } });
-    if (!row?.value || !(row.value as any)._version) {
-      return { _version: 2, sections: [] };
+    const value = row?.value as any;
+    if (!value?._version || !Array.isArray(value.sections) || value.sections.length === 0) {
+      return DEFAULT_HOMEPAGE_CONFIG;
     }
-    return row.value;
+    return value;
   }
 
   @Get('config')
@@ -477,8 +460,14 @@ class HomepageController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('super_admin')
   async saveConfig(@Body() body: any) {
-    await this.configRepo.save({ key: HOMEPAGE_CONFIG_KEY, value: body });
-    return body;
+    const value = {
+      _version: body?._version || DEFAULT_HOMEPAGE_CONFIG._version,
+      sections: Array.isArray(body?.sections) && body.sections.length
+        ? body.sections
+        : DEFAULT_HOMEPAGE_CONFIG.sections,
+    };
+    await this.configRepo.save({ key: HOMEPAGE_CONFIG_KEY, value });
+    return value;
   }
 }
 

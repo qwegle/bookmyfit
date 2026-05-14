@@ -251,8 +251,11 @@ export default function SlotsScreen() {
               </View>
             );
           }
-          return filtered.map((slot: any) => {            const isFull = slot.isFull || (slot.booked >= slot.capacity);
-            const available = (slot.capacity || 0) - (slot.booked || 0);
+          return filtered.map((slot: any) => {
+            const capacity = Number(slot.capacity ?? slot.maxCapacity ?? 0);
+            const booked = Number(slot.booked ?? slot.bookedCount ?? 0);
+            const isFull = slot.isFull || (capacity > 0 && booked >= capacity);
+            const available = Math.max(0, capacity - booked);
             const isBooking = bookingId === (slot.id || slot._id);
             const stColor = slot.sessionType?.color || colors.accent;
             const stName = slot.sessionType?.name || '';

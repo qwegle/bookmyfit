@@ -14,11 +14,11 @@ const CASHFREE_BASE_URL: string =
 export default function PaymentWebview() {
   const {
     orderId, sessionId, paymentSessionId,
-    planId, gymId, gymName, subId,
+    planId, planName, gymId, gymName, subId, amountPaid, validUntil,
     bookingId, returnRoute, serviceName, amount,
   } = useLocalSearchParams<{
     orderId: string; sessionId?: string; paymentSessionId?: string;
-    planId?: string; gymId?: string; gymName?: string; subId?: string;
+    planId?: string; planName?: string; gymId?: string; gymName?: string; subId?: string; amountPaid?: string; validUntil?: string;
     bookingId?: string; returnRoute?: string; serviceName?: string; amount?: string;
   }>();
 
@@ -42,8 +42,17 @@ export default function PaymentWebview() {
       try { await api.post(`/wellness/bookings/${bookingId}/confirm`, {}); } catch {}
     }
     // Verify + activate subscription if subId available
+    let verifiedSub: any = null;
     if (subId) {
-      try { await subscriptionsApi.verify(subId); } catch {}
+      try {
+        const verifyRes: any = await subscriptionsApi.verify(subId);
+        verifiedSub = verifyRes?.subscription || null;
+        if (verifyRes?.success === false) {
+          Alert.alert('Payment is being confirmed', 'Your payment was received but the subscription is still pending confirmation. Please check My Subscriptions shortly.');
+          router.replace('/(tabs)/subscriptions' as any);
+          return;
+        }
+      } catch {}
     }
     // Route to correct success screen
     if (returnRoute === 'wellness') {
@@ -54,7 +63,16 @@ export default function PaymentWebview() {
     } else {
       router.replace({
         pathname: '/success',
-        params: { orderId, planId: planId || '', gymId: gymId || '', gymName: gymName || '', subscriptionId: subId || '' },
+        params: {
+          orderId,
+          planId: planId || '',
+          planName: planName || verifiedSub?.planLabel || 'Standard Plan',
+          gymId: gymId || '',
+          gymName: gymName || verifiedSub?.gymName || '',
+          subscriptionId: subId || '',
+          validUntil: validUntil || verifiedSub?.endDate || '',
+          amountPaid: amountPaid || String(verifiedSub?.amountPaid || 0),
+        },
       });
     }
   };

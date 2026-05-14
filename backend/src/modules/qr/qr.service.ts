@@ -7,8 +7,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { CheckinEntity } from '../../database/entities/checkin.entity';
 import { SubscriptionEntity } from '../../database/entities/subscription.entity';
 import { GymEntity } from '../../database/entities/gym.entity';
+import { UserEntity } from '../../database/entities/user.entity';
 import { FraudAlertEntity } from '../../database/entities/misc.entity';
 import { BookingQrEntity } from '../../database/entities/booking-qr.entity';
+import { SessionBookingEntity } from '../../database/entities/session-booking.entity';
 import { REDIS_CLIENT } from '../../common/redis/redis.module';
 
 const QR_EXPIRY_SECONDS = 30;
@@ -27,8 +29,10 @@ export class QrService {
     @InjectRepository(CheckinEntity) private readonly checkins: Repository<CheckinEntity>,
     @InjectRepository(SubscriptionEntity) private readonly subs: Repository<SubscriptionEntity>,
     @InjectRepository(GymEntity) private readonly gyms: Repository<GymEntity>,
+    @InjectRepository(UserEntity) private readonly users: Repository<UserEntity>,
     @InjectRepository(FraudAlertEntity) private readonly fraudAlerts: Repository<FraudAlertEntity>,
     @InjectRepository(BookingQrEntity) private readonly bookingQrs: Repository<BookingQrEntity>,
+    @InjectRepository(SessionBookingEntity) private readonly sessionBookings: Repository<SessionBookingEntity>,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
@@ -144,6 +148,11 @@ export class QrService {
         .andWhere('"usedAt" IS NULL')
         .execute();
       if (!update.affected) throw new ConflictException('QR already used');
+
+      await this.sessionBookings.update(
+        { id: bookingQr.slotBookingId },
+        { status: 'attended' as any, checkinAt: new Date() },
+      );
     }
 
     // 6. Record check-in
@@ -156,6 +165,11 @@ export class QrService {
         status: 'success',
       }),
     );
+    const user = await this.users.findOne({ where: { id: userId } });
+    const ratePerDay = Number((gym as any).ratePerDay ?? 50);
+    const commissionRate = Number((gym as any).commissionRate ?? 15) / 100;
+    const gymEarns = ratePerDay * (1 - commissionRate);
+    const adminEarns = ratePerDay * commissionRate;
 
     // 7. Async velocity fraud check (non-blocking)
     this.checkVelocityFraud(userId, gymId, gym.name);
@@ -163,9 +177,11 @@ export class QrService {
     return {
       success: true,
       checkinId: checkin.id,
-      user: { id: userId },
+      user: { id: userId, name: user?.name, phone: user?.phone || user?.email },
       gym: { id: gym.id, name: gym.name },
       planType: sub.planType,
+      gymEarns,
+      adminEarns,
       checkinTime: checkin.checkinTime,
     };
   }

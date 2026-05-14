@@ -264,7 +264,13 @@ export default function PlansScreen() {
       ? 'Book Slot'
       : (plan.id === 'same_gym' || plan.id === 'day_pass') && !gymId
         ? 'Select Gym'
-        : (!plan.priceNumber && !plansLoading && plan.id === 'same_gym' && gymId) ? 'Not Available' : plan.cta;
+        : (!plan.priceNumber && !plansLoading && plan.id === 'same_gym' && gymId)
+          ? 'Not Available'
+          : plan.id === 'day_pass' && gymId
+            ? 'Buy Day Pass'
+            : plan.id === 'same_gym' && gymId
+              ? 'Choose Duration'
+              : plan.cta;
 
   return (
     <SafeAreaView style={s.root}>

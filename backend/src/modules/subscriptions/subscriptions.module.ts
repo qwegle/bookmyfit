@@ -348,7 +348,7 @@ class SubscriptionsService {
       await this.repo.update(subId, { status: 'active' });
       sub.status = 'active';
     }
-    return { success: true, subscription: sub };
+    return { success: sub.status === 'active', subscription: sub, paymentStatus: cfOrder?.order_status || 'unknown' };
   }
 
   async list(page: any = 1, limit: any = 20, status?: string, gymId?: string) {

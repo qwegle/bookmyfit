@@ -664,7 +664,14 @@ export class SessionsService {
     const today = todayIST();
     const nowTime = nowTimeIST();
 
-    const sub = await this.subRepo.findOne({ where: { userId, status: 'active' } as any });
+    const sub = await this.subRepo.createQueryBuilder('sub')
+      .where('sub."userId" = :userId', { userId })
+      .andWhere('sub.status = :status', { status: 'active' })
+      .andWhere('sub."endDate" >= CURRENT_DATE')
+      .andWhere('(sub."planType" = :multiGym OR :gymId = ANY(sub."gymIds"))', { multiGym: 'multi_gym', gymId })
+      .orderBy(`CASE WHEN :gymId = ANY(sub."gymIds") THEN 0 ELSE 1 END`, 'ASC')
+      .addOrderBy('sub."createdAt"', 'DESC')
+      .getOne();
     if (!sub) return { success: false, reason: 'no_active_subscription', message: 'No active subscription.' };
 
     // Already attended today?

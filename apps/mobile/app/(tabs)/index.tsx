@@ -34,6 +34,52 @@ const CATEGORIES = [
   { id: 'hiit',     label: 'HIIT',      color: '#FBBF24',         bg: 'rgba(251,191,36,0.15)',       icon: 'bolt'      },
 ];
 
+const FALLBACK_HERO_SLIDES = [
+  {
+    imageUrl: DEFAULT_HOMEPAGE_HERO_IMAGE,
+    headline: 'Make Every Rep',
+    headlineAccent: 'Count.',
+    sub: 'Book partner gyms, sessions, wellness services, and essentials from one app.',
+    cta: 'Explore Gyms',
+    ctaRoute: '/gyms',
+  },
+  {
+    imageUrl: DEFAULT_HOMEPAGE_HERO_IMAGE,
+    headline: 'One Pass,',
+    headlineAccent: 'More Access.',
+    sub: 'Choose same-gym or multi-gym plans and keep your workout flexible.',
+    cta: 'View Plans',
+    ctaRoute: '/plans',
+  },
+  {
+    imageUrl: DEFAULT_HOMEPAGE_HERO_IMAGE,
+    headline: 'Recover.',
+    headlineAccent: 'Shop. Train.',
+    sub: 'Explore wellness services and fitness products after your workout.',
+    cta: 'Explore Wellness',
+    ctaRoute: '/wellness',
+  },
+];
+
+const FALLBACK_HOME_SECTIONS = [
+  { id: 'fallback-hero', type: 'hero', title: 'Hero Banner', visible: true, order: 0, slides: FALLBACK_HERO_SLIDES },
+  { id: 'fallback-categories', type: 'categories', title: 'Browse by Category', visible: true, order: 1 },
+  { id: 'fallback-featured-gyms', type: 'featured_gyms', title: 'Featured Gyms', visible: true, order: 2, gyms: [] },
+  { id: 'fallback-products', type: 'products', title: 'Shop Fitness Store', visible: true, order: 3, products: [] },
+];
+
+function listFrom(data: any, keys: string[] = []) {
+  const candidates = [
+    data,
+    ...keys.map((key) => data?.[key]),
+    data?.data,
+    ...keys.map((key) => data?.data?.[key]),
+    data?.items,
+    data?.results,
+  ];
+  return candidates.find((item) => Array.isArray(item)) || [];
+}
+
 function CatIcon({ type, size, color }: { type: string; size: number; color: string }) {
   const p = { width: size, height: size, viewBox: '0 0 24 24', fill: 'none', stroke: color, strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
   if (type === 'dumbbell')  return <Svg {...p}><Path d="M6.5 6.5h11M6.5 17.5h11M2 10v4M22 10v4M5 8v8M19 8v8" /></Svg>;
@@ -73,6 +119,7 @@ export default function Home() {
   const [showCityPicker, setShowCityPicker] = useState(false);
   const [heroIdx, setHeroIdx] = useState(0);
   const [wellnessServices, setWellnessServices] = useState<any[]>([]);
+  const [homeProducts, setHomeProducts] = useState<any[]>([]);
   const [homeGyms, setHomeGyms] = useState<any[]>([]);
   const [subscribedGymIds, setSubscribedGymIds] = useState<Set<string>>(new Set());
   const [activeGymSubs, setActiveGymSubs] = useState<Map<string, any>>(new Map());
@@ -112,7 +159,7 @@ export default function Home() {
   useEffect(() => {
     fetch(`${API_BASE}/api/v1/wellness/services/all`)
       .then((r) => r.json())
-      .then((data: any) => setWellnessServices(Array.isArray(data) ? data.slice(0, 8) : []))
+      .then((data: any) => setWellnessServices(listFrom(data, ['services']).slice(0, 8)))
       .catch(() => setWellnessServices([]));
   }, []);
 
@@ -120,10 +167,16 @@ export default function Home() {
     fetch(`${API_BASE}/api/v1/gyms?limit=6`)
       .then((r) => r.json())
       .then((data: any) => {
-        const list = Array.isArray(data) ? data : data?.data || data?.gyms || [];
-        setHomeGyms(Array.isArray(list) ? list.slice(0, 6) : []);
+        setHomeGyms(listFrom(data, ['gyms']).slice(0, 6));
       })
       .catch(() => setHomeGyms([]));
+  }, []);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/v1/store/products?limit=8`)
+      .then((r) => r.json())
+      .then((data: any) => setHomeProducts(listFrom(data, ['products']).slice(0, 8)))
+      .catch(() => setHomeProducts([]));
   }, []);
 
   useEffect(() => {
@@ -143,16 +196,43 @@ export default function Home() {
       });
   }, []);
 
-  const sections: any[] = config
-    ? [...(config.sections || [])].filter((s) => s.visible).sort((a: any, b: any) => a.order - b.order)
-    : [];
+  const configuredSections = Array.isArray(config?.sections) ? config.sections : [];
+  const visibleConfiguredSections = configuredSections.filter((section: any) => section && section.visible !== false);
+  const baseSections = visibleConfiguredSections.length ? visibleConfiguredSections : FALLBACK_HOME_SECTIONS;
+  const sections: any[] = baseSections
+    .map((section: any, index: number) => {
+      const normalized = {
+        ...section,
+        id: section.id || `${section.type || 'section'}-${index}`,
+        order: Number.isFinite(Number(section.order)) ? Number(section.order) : index,
+      };
+
+      if (normalized.type === 'hero' && !normalized.slides?.length) {
+        normalized.slides = FALLBACK_HERO_SLIDES;
+      }
+
+      if (normalized.type === 'featured_gyms' && !normalized.gyms?.length && homeGyms.length) {
+        normalized.gyms = homeGyms;
+      }
+
+      if (normalized.type === 'products' && !normalized.products?.length && homeProducts.length) {
+        normalized.products = homeProducts;
+      }
+
+      return normalized;
+    })
+    .filter((section: any) => section.visible !== false)
+    .sort((a: any, b: any) => a.order - b.order);
 
   const heroSection = sections.find((s) => s.type === 'hero');
-  const slides = heroSection?.slides || [];
+  const slides = heroSection?.slides?.length ? heroSection.slides : FALLBACK_HERO_SLIDES;
   const featuredGymSection = sections.find((s) => s.type === 'featured_gyms');
+  const hasWellnessAfterFeatured = sections.some((s) => s.type === 'wellness_services');
   const bottomGymSection = homeGyms.length
     ? { id: 'nearby-gyms', title: 'Gyms Near You', gyms: homeGyms }
-    : featuredGymSection;
+    : featuredGymSection?.gyms?.length
+      ? featuredGymSection
+      : null;
 
   // Auto-advance hero
   useEffect(() => {
@@ -243,9 +323,10 @@ export default function Home() {
                   multiGymSub={multiGymSub}
                   hasMultiGymSub={hasMultiGymSub}
                 />
-                <WellnessServicesSection services={wellnessServices} />
+                {!hasWellnessAfterFeatured && <WellnessServicesSection services={wellnessServices} />}
               </View>
             );
+            case 'wellness_services': return <WellnessServicesSection key={section.id} services={wellnessServices} />;
             case 'products':   return <ProductsSection key={section.id} section={section} />;
             case 'trust':      return null;
             case 'testimonials': return null;
@@ -450,7 +531,7 @@ function GymListingSection({
                 </View>
                 <View style={s.gymListBottomRow}>
                   <Text style={s.gymListPrice} numberOfLines={1}>
-                    {hasAccess ? 'Ready to book sessions' : (g.dayPassPrice ? `From Rs ${Number(g.dayPassPrice).toLocaleString('en-IN')}/day` : 'View plans')}
+                    {hasAccess ? 'Ready to book sessions' : (g.dayPassPrice ? `From Rs ${Number(g.dayPassPrice).toLocaleString('en-IN')}/day` : 'Plans available')}
                   </Text>
                   <TouchableOpacity
                     style={[s.gymListCta, hasAccess && s.gymListBookCta]}
@@ -460,7 +541,7 @@ function GymListingSection({
                       else router.push({ pathname: '/plans', params: { gymId: gid, gymName: g.name || 'Gym' } } as any);
                     }}
                   >
-                    <Text style={[s.gymListCtaText, hasAccess && s.gymListBookCtaText]}>{hasAccess ? 'Book' : 'View'}</Text>
+                    <Text style={[s.gymListCtaText, hasAccess && s.gymListBookCtaText]}>{hasAccess ? 'Book' : 'Plans'}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -791,6 +872,7 @@ const s = StyleSheet.create({
   // Testimonials
   testimonialCard: { width: W * 0.72, backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: radius.xl, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)', padding: 16 },
   testimonialText: { fontFamily: fonts.sans, fontSize: 12, color: 'rgba(255,255,255,0.65)', lineHeight: 18, fontStyle: 'italic' },
+  testimonialAuthorRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 14 },
   avatarCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(61,255,84,0.12)', borderWidth: 1, borderColor: 'rgba(61,255,84,0.22)', alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontFamily: fonts.sansBold, fontSize: 12, color: colors.accent },
   authorName: { fontFamily: fonts.sansBold, fontSize: 12, color: '#fff' },

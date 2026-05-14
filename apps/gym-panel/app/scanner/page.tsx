@@ -162,8 +162,12 @@ export default function ScannerPage() {
       if (scanRes?.success === false) {
         showResultAndResume({ ok: false, message: scanRes.message || 'Check-in denied' });
       } else {
-        const gymEarns = undefined;
-        const adminEarns = gymEarns != null ? ratePerDay - gymEarns : undefined;
+        const gymEarns = scanRes?.gymEarns != null
+          ? Number(scanRes.gymEarns)
+          : ratePerDay * (1 - commissionRate / 100);
+        const adminEarns = scanRes?.adminEarns != null
+          ? Number(scanRes.adminEarns)
+          : ratePerDay - gymEarns;
         showResultAndResume({
           ok: true,
           userName: scanRes?.user?.name || (scanRes?.user?.id ? `Member ${String(scanRes.user.id).slice(0, 8)}` : 'Member'),

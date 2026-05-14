@@ -2,6 +2,8 @@ import { Body, Controller, Get, Post, Query, UseGuards, Req } from '@nestjs/comm
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { IsString, IsUUID } from 'class-validator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/guards/roles.decorator';
 import { QrService } from './qr.service';
 
 class GenerateQrDto {
@@ -26,6 +28,8 @@ export class QrController {
   }
 
   @Post('validate')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('gym_owner', 'gym_staff', 'super_admin')
   @ApiOperation({ summary: 'Validate a QR token (gym panel scanner)' })
   validate(@Body() dto: ValidateQrDto) {
     return this.qr.validateQr(dto.qrToken, dto.gymId);
