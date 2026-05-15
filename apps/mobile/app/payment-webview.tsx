@@ -12,6 +12,9 @@ import { clearCart } from './cart';
 const CASHFREE_BASE_URL: string =
   (Constants.expoConfig?.extra as any)?.cashfreeBaseUrl ?? 'https://sandbox.cashfree.com';
 const CASHFREE_MODE = CASHFREE_BASE_URL.includes('sandbox') ? 'sandbox' : 'production';
+const VERIFY_DELAYS_MS = [0, 1000, 1500, 2000, 2500, 3000, 4000];
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export default function PaymentWebview() {
   const {
@@ -25,6 +28,7 @@ export default function PaymentWebview() {
   }>();
 
   const [loading, setLoading] = useState(true);
+  const [verifying, setVerifying] = useState(false);
   const [mockConfirming, setMockConfirming] = useState(false);
   const webviewRef = useRef<any>(null);
   const successHandledRef = useRef(false);
@@ -99,77 +103,122 @@ export default function PaymentWebview() {
 </html>`;
   }, [effectiveSessionId, orderId]);
 
+  const showPaymentFailed = (message = 'Your payment was not completed. Please try again.') => {
+    successHandledRef.current = false;
+    setVerifying(false);
+    Alert.alert('Payment Failed', message, [
+      { text: 'Try Again', onPress: () => webviewRef.current?.reload() },
+      { text: 'Cancel', onPress: () => router.back() },
+    ]);
+  };
+
+  const verifyOrderWithRetry = async () => {
+    if (!orderId || isMock) return { paid: true, result: null };
+
+    let lastResult: any = null;
+    for (const delayMs of VERIFY_DELAYS_MS) {
+      if (delayMs > 0) await wait(delayMs);
+      try {
+        const verifyRes: any = await api.post(`/payments/verify/${orderId}`, {});
+        lastResult = verifyRes;
+        const status = String(
+          verifyRes?.paymentStatus || verifyRes?.status || verifyRes?.orderStatus || '',
+        ).toUpperCase();
+
+        if (verifyRes?.paid === true || status === 'PAID' || status === 'SUCCESS') {
+          return { paid: true, result: verifyRes };
+        }
+
+        if (/(FAILED|DROPPED|CANCELLED|CANCELED|EXPIRED)/.test(status)) {
+          throw new Error('Payment was not completed.');
+        }
+      } catch (err: any) {
+        const message = String(err?.message || '');
+        if (/failed|dropped|cancelled|canceled|expired/i.test(message)) throw err;
+        lastResult = { error: err };
+      }
+    }
+
+    return { paid: false, result: lastResult };
+  };
+
   const handleSuccess = async () => {
     if (successHandledRef.current) return;
     successHandledRef.current = true;
-    const shouldVerifyGenericOrder = returnRoute === 'store' || returnRoute === 'wellness' || planId === 'pt_monthly';
-    if (shouldVerifyGenericOrder && orderId) {
-      try {
-        const verifyRes: any = await api.post(`/payments/verify/${orderId}`, {});
-        if (!verifyRes?.paid && verifyRes?.paymentStatus !== 'PAID') {
-          Alert.alert('Payment is being confirmed', 'Your payment is still being confirmed. Please check again shortly.');
-          router.back();
-          return;
-        }
-      } catch {
-        Alert.alert('Payment is being confirmed', 'We could not verify the payment yet. Please check again shortly.');
-        router.back();
+    setLoading(false);
+    setVerifying(true);
+    try {
+      const orderVerification = await verifyOrderWithRetry();
+      if (!orderVerification.paid) {
+        successHandledRef.current = false;
+        Alert.alert(
+          'Payment is being confirmed',
+          'Cashfree has not confirmed this payment yet. Please check again shortly.',
+          [{ text: 'OK', onPress: () => (subId ? router.replace('/(tabs)/subscriptions' as any) : router.back()) }],
+        );
         return;
       }
-    }
-    // Confirm wellness booking if bookingId present
-    if (bookingId) {
-      try { await api.post(`/wellness/bookings/${bookingId}/confirm`, {}); } catch {}
-    }
-    // Verify + activate subscription if subId available
-    let verifiedSub: any = null;
-    if (subId) {
-      try {
-        const verifyRes: any = await subscriptionsApi.verify(subId);
-        verifiedSub = verifyRes?.subscription || null;
-        if (verifyRes?.success === false) {
-          Alert.alert('Payment is being confirmed', 'Your payment was received but the subscription is still pending confirmation. Please check My Subscriptions shortly.');
+
+      // Confirm wellness booking if bookingId present
+      if (bookingId) {
+        try { await api.post(`/wellness/bookings/${bookingId}/confirm`, {}); } catch {}
+      }
+
+      // Verify + activate subscription if subId available
+      let verifiedSub: any = null;
+      if (subId) {
+        try {
+          const verifyRes: any = await subscriptionsApi.verify(subId);
+          verifiedSub = verifyRes?.subscription || null;
+          if (verifyRes?.success === false) {
+            Alert.alert('Payment is being confirmed', 'Your payment was received but the subscription is still pending confirmation. Please check My Subscriptions shortly.');
+            router.replace('/(tabs)/subscriptions' as any);
+            return;
+          }
+        } catch {
+          Alert.alert('Payment is being confirmed', 'We could not verify the payment yet. Please check My Subscriptions shortly.');
           router.replace('/(tabs)/subscriptions' as any);
           return;
         }
-      } catch {
-        Alert.alert('Payment is being confirmed', 'We could not verify the payment yet. Please check My Subscriptions shortly.');
-        router.replace('/(tabs)/subscriptions' as any);
-        return;
       }
-    }
-    // Route to correct success screen
-    if (returnRoute === 'wellness') {
-      router.replace({
-        pathname: '/booking-success',
-        params: { bookingId: bookingId || '', orderId, serviceName: serviceName || '', amount: amount || '' },
-      } as any);
-    } else if (returnRoute === 'store') {
-      clearCart();
-      router.replace({
-        pathname: '/success',
-        params: {
-          orderId,
-          planId: 'store_order',
-          planName: 'Store Purchase',
-          amountPaid: amountPaid || amount || String(verifiedSub?.amountPaid || 0),
-          subscriptionId: '',
-        },
-      } as any);
-    } else {
-      router.replace({
-        pathname: '/success',
-        params: {
-          orderId,
-          planId: planId || '',
-          planName: planName || verifiedSub?.planLabel || 'Standard Plan',
-          gymId: gymId || '',
-          gymName: gymName || verifiedSub?.gymName || '',
-          subscriptionId: subId || '',
-          validUntil: validUntil || verifiedSub?.endDate || '',
-          amountPaid: amountPaid || String(verifiedSub?.amountPaid || 0),
-        },
-      });
+
+      // Route to correct success screen
+      if (returnRoute === 'wellness') {
+        router.replace({
+          pathname: '/booking-success',
+          params: { bookingId: bookingId || '', orderId, serviceName: serviceName || '', amount: amount || '' },
+        } as any);
+      } else if (returnRoute === 'store') {
+        clearCart();
+        router.replace({
+          pathname: '/success',
+          params: {
+            orderId,
+            planId: 'store_order',
+            planName: 'Store Purchase',
+            amountPaid: amountPaid || amount || String(verifiedSub?.amountPaid || 0),
+            subscriptionId: '',
+          },
+        } as any);
+      } else {
+        router.replace({
+          pathname: '/success',
+          params: {
+            orderId,
+            planId: planId || '',
+            planName: planName || verifiedSub?.planLabel || 'Standard Plan',
+            gymId: gymId || '',
+            gymName: gymName || verifiedSub?.gymName || '',
+            subscriptionId: subId || '',
+            validUntil: validUntil || verifiedSub?.endDate || '',
+            amountPaid: amountPaid || String(verifiedSub?.amountPaid || 0),
+          },
+        });
+      }
+    } catch {
+      showPaymentFailed();
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -182,18 +231,25 @@ export default function PaymentWebview() {
   };
 
   const handlePaymentUrl = (url: string) => {
+    const lowerUrl = String(url || '').toLowerCase();
+    if (!lowerUrl) return;
+
     if (
-      url.includes('bookmyfit://payment-success') ||
-      url.includes('payment_status=SUCCESS') ||
-      url.includes('payment-return') ||
-      (url.includes('success') && !url.includes('cashfree'))
+      lowerUrl.includes('payment_status=failed') ||
+      lowerUrl.includes('payment_status=user_dropped') ||
+      lowerUrl.includes('payment_status=cancelled') ||
+      lowerUrl.includes('status=failed') ||
+      lowerUrl.includes('status=user_dropped') ||
+      lowerUrl.includes('status=cancelled')
+    ) {
+      showPaymentFailed();
+    } else if (
+      lowerUrl.includes('bookmyfit://payment-success') ||
+      lowerUrl.includes('payment_status=success') ||
+      lowerUrl.includes('payment-return') ||
+      (lowerUrl.includes('success') && !lowerUrl.includes('cashfree'))
     ) {
       handleSuccess();
-    } else if (url.includes('payment_status=FAILED') || url.includes('payment_status=USER_DROPPED')) {
-      Alert.alert('Payment Failed', 'Your payment was not completed. Please try again.', [
-        { text: 'Try Again', onPress: () => webviewRef.current?.reload() },
-        { text: 'Cancel', onPress: () => router.back() },
-      ]);
     }
   };
 
@@ -227,20 +283,16 @@ export default function PaymentWebview() {
       else if (msg.type === 'CHECKOUT_RESULT') {
         const payload = msg.payload || {};
         const status = String(payload.paymentDetails?.paymentMessage || payload.order?.order_status || payload.paymentStatus || payload.status || '').toLowerCase();
-        if (status.includes('failed') || status.includes('drop') || status.includes('cancel')) {
-          Alert.alert('Payment Failed', 'Your payment was not completed. Please try again.', [
-            { text: 'Try Again', onPress: () => webviewRef.current?.reload() },
-            { text: 'Cancel', onPress: () => router.back() },
-          ]);
-        } else {
+        if (payload.error) {
+          showPaymentFailed(payload.error?.message || 'Your payment was not completed. Please try again.');
+        } else if (status.includes('failed') || status.includes('drop') || status.includes('cancel')) {
+          showPaymentFailed();
+        } else if (status.includes('success') || status.includes('paid') || payload.paymentDetails || payload.order) {
           await handleSuccess();
         }
       }
       else if (msg.type === 'FAILURE') {
-        Alert.alert('Payment Failed', 'Please try again.', [
-          { text: 'Try Again', onPress: () => webviewRef.current?.reload() },
-          { text: 'Cancel', onPress: () => router.back() },
-        ]);
+        showPaymentFailed('Please try again.');
       }
     } catch {}
   };
@@ -296,10 +348,10 @@ export default function PaymentWebview() {
                 <Text style={s.mockValue}>{serviceName}</Text>
               </View>
             ) : null}
-            {amount ? (
+            {(amount || amountPaid) ? (
               <View style={s.mockRow}>
                 <Text style={s.mockLabel}>Amount</Text>
-                <Text style={s.mockAmtValue}>₹{Number(amount).toLocaleString()}</Text>
+                <Text style={s.mockAmtValue}>₹{Number(amount || amountPaid).toLocaleString()}</Text>
               </View>
             ) : null}
 
@@ -347,10 +399,10 @@ export default function PaymentWebview() {
         </View>
       </View>
 
-      {loading && (
+      {(loading || verifying) && (
         <View style={s.loadingOverlay}>
           <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={s.loadingText}>Loading secure payment…</Text>
+          <Text style={s.loadingText}>{verifying ? 'Confirming payment...' : 'Loading secure payment...'}</Text>
         </View>
       )}
 

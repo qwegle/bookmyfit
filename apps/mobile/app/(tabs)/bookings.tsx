@@ -94,7 +94,7 @@ export default function BookingsTab() {
   const mins = Math.floor((secsLeft % 3600) / 60);
 
   return (
-    <SafeAreaView style={s.root}>
+    <SafeAreaView style={s.root} edges={['top', 'left', 'right']}>
       <View style={s.headerRow}>
         <Text style={s.pageTitle}>My Bookings</Text>
       </View>
@@ -247,7 +247,7 @@ const s = StyleSheet.create({
   tabText: { fontFamily: fonts.sansMedium ?? fonts.sans, fontSize: 13, color: colors.t2 },
   tabTextActive: { fontFamily: fonts.sansBold, color: colors.accent },
 
-  container: { paddingHorizontal: spacing.lg, paddingBottom: 36 },
+  container: { paddingHorizontal: spacing.lg, paddingBottom: 16 },
   centre: { paddingTop: 60, alignItems: 'center' },
 
   // Gym session card

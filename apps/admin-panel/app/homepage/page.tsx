@@ -63,7 +63,7 @@ export default function HomepagePage() {
   useEffect(() => {
     api.get('/homepage/config')
       .then((data: any) => {
-        if (data?.sections?.length) {
+        if (Array.isArray(data?.sections) && data.sections.length) {
           setBackendSections(data.sections);
           setSections(backendToUi(data.sections));
         }

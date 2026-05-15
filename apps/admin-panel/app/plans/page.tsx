@@ -28,6 +28,7 @@ export default function PlansPage() {
   const [config, setConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [loadedFromApi, setLoadedFromApi] = useState(false);
   const [prices, setPrices] = useState({ day_pass: 149, same_gym: 599, multi_gym: 1499 });
   const [commissions, setCommissions] = useState(DEFAULT_PASS_COMMISSION);
 
@@ -35,6 +36,7 @@ export default function PlansPage() {
     api.get('/subscriptions/plans')
       .then((data: any) => {
         setConfig(data);
+        setLoadedFromApi(true);
         setPrices({
           day_pass: data?.day_pass?.basePrice || 149,
           same_gym: data?.same_gym?.basePrice || 599,
@@ -45,11 +47,18 @@ export default function PlansPage() {
           same_gym: normalizeCommission(data?.same_gym?.commission),
         });
       })
-      .catch(() => {})
+      .catch(() => {
+        setLoadedFromApi(false);
+        toast('Could not load live plan settings. Saving is disabled until the API returns data.', 'error');
+      })
       .finally(() => setLoading(false));
-  }, []);
+  }, [toast]);
 
   const save = async () => {
+    if (!loadedFromApi) {
+      toast('Live plan settings are not loaded yet. Please refresh before saving.', 'error');
+      return;
+    }
     setSaving(true);
     try {
       await api.put('/subscriptions/multigym-config', {
@@ -185,9 +194,9 @@ export default function PlansPage() {
 
             <button
               onClick={save}
-              disabled={saving}
+              disabled={saving || !loadedFromApi}
               className="btn btn-primary"
-              style={{ alignSelf: 'flex-start', opacity: saving ? 0.6 : 1 }}
+              style={{ alignSelf: 'flex-start', opacity: saving || !loadedFromApi ? 0.6 : 1 }}
             >
               {saving ? 'Saving…' : 'Save Plan Prices'}
             </button>

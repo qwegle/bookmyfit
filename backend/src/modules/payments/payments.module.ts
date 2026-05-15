@@ -72,17 +72,20 @@ class PaymentsService {
       }
     }
     if (order) {
-      order.status = paid ? 'paid' : (failed ? 'cancelled' : order.status);
+      if (paid) order.status = 'paid';
+      else if (failed && order.status !== 'paid') order.status = 'cancelled';
       await this.orders.save(order);
       processed.push({ kind: 'order', paid });
     }
     if (pt) {
-      pt.status = paid ? 'confirmed' : (failed ? 'cancelled' : pt.status);
+      if (paid) pt.status = 'confirmed';
+      else if (failed && pt.status !== 'confirmed') pt.status = 'cancelled';
       await this.ptBookings.save(pt);
       processed.push({ kind: 'pt', paid });
     }
     if (wellness) {
-      wellness.status = paid ? 'confirmed' : (failed ? 'cancelled' : wellness.status);
+      if (paid) wellness.status = 'confirmed';
+      else if (failed && wellness.status !== 'confirmed') wellness.status = 'cancelled';
       await this.wellnessBookings.save(wellness);
       processed.push({ kind: 'wellness', paid });
     }
@@ -100,7 +103,8 @@ class PaymentsService {
     const event = payload?.type;
     const orderId: string | undefined = payload?.data?.order?.order_id;
     const paymentStatus = String(payload?.data?.payment?.payment_status || '').toUpperCase();
-    const status: string | undefined = payload?.data?.order?.order_status || (paymentStatus === 'SUCCESS' ? 'PAID' : paymentStatus);
+    const orderStatus = String(payload?.data?.order?.order_status || '').toUpperCase();
+    const status: string | undefined = ['SUCCESS', 'PAID'].includes(paymentStatus) ? 'PAID' : (orderStatus || paymentStatus);
     const paymentId: string | undefined = payload?.data?.payment?.cf_payment_id;
     return this.applyOrderStatus(orderId || '', status, paymentId, event);
   }

@@ -95,7 +95,29 @@ export default function Order() {
           .toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
       const paidAmount = String(subRecord?.amountPaid ?? finalTotal);
 
-      if (sessionId && orderId && !paymentInfo?.mock) {
+      if (paymentInfo?.mock) {
+        // Dev mode or mock payment - subscription already activated by backend.
+        router.replace({
+          pathname: '/success',
+          params: {
+            orderId: orderId || 'N/A',
+            planName: planName || 'Standard Plan',
+            gymName: selectedGymName,
+            validUntil,
+            amountPaid: paidAmount,
+            subscriptionId: subId || 'NEW',
+            planId: planId || '',
+            gymId: gymId || '',
+          },
+        });
+        return;
+      }
+
+      if (!orderId || !sessionId || !subId) {
+        throw new Error('Payment session could not be created. Please try again.');
+      }
+
+      if (sessionId && orderId) {
         router.push({
           pathname: '/payment-webview',
           params: {
@@ -108,21 +130,6 @@ export default function Order() {
             subId: subId || '',
             amountPaid: paidAmount,
             validUntil,
-          },
-        });
-      } else {
-        // Dev mode or mock payment — subscription already activated by backend
-        router.replace({
-          pathname: '/success',
-          params: {
-            orderId: orderId || 'N/A',
-            planName: planName || 'Standard Plan',
-            gymName: selectedGymName,
-            validUntil,
-            amountPaid: paidAmount,
-            subscriptionId: subId || 'NEW',
-            planId: planId || '',
-            gymId: gymId || '',
           },
         });
       }

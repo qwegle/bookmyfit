@@ -79,7 +79,7 @@ const SMALL_CARDS = [
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function ExploreHub() {
   return (
-    <SafeAreaView style={s.root}>
+    <SafeAreaView style={s.root} edges={['top', 'left', 'right']}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
 
         {/* Header */}
@@ -198,7 +198,7 @@ export default function ExploreHub() {
 
 const s = StyleSheet.create({
   root:   { flex: 1, backgroundColor: colors.bg },
-  scroll: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 36 },
+  scroll: { paddingHorizontal: 18, paddingTop: 12, paddingBottom: 16 },
 
   // Header
   header:   { marginBottom: 20 },

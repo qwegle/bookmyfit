@@ -1,140 +1,152 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import Shell from '../../components/Shell';
 import { api } from '../../lib/api';
-import { useToast } from '../../components/Toast';
+import { Building2, ListChecks, Sparkles } from 'lucide-react';
 
-type CommissionRate = { id: string; planType: string; commission: number; minGyms: number; maxGyms: number };
+type PassCommission = { mode?: 'percent' | 'fixed'; value?: number };
+
+function asArray(value: any) {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.items)) return value.items;
+  if (Array.isArray(value?.partners)) return value.partners;
+  return [];
+}
+
+function formatMoney(value: any) {
+  if (value == null || value === '') return 'Unavailable';
+  const amount = Math.round(Number(value) || 0);
+  return `Rs ${amount.toLocaleString('en-IN')}`;
+}
+
+function formatCommission(value: PassCommission | undefined) {
+  const amount = Math.max(0, Number(value?.value) || 0);
+  if (!amount) return '0';
+  return value?.mode === 'fixed' ? formatMoney(amount) : `${amount}%`;
+}
+
+function avg(values: number[]) {
+  const clean = values.filter((value) => Number.isFinite(value));
+  if (!clean.length) return null;
+  return clean.reduce((sum, value) => sum + value, 0) / clean.length;
+}
 
 export default function CommissionPage() {
-  const { toast } = useToast();
-  const [rates, setRates] = useState<CommissionRate[]>([]);
+  const [plans, setPlans] = useState<any>(null);
+  const [gyms, setGyms] = useState<any[]>([]);
+  const [wellnessPartners, setWellnessPartners] = useState<any[]>([]);
+  const [availability, setAvailability] = useState({ plans: false, gyms: false, wellness: false });
   const [loading, setLoading] = useState(true);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editValues, setEditValues] = useState({ commission: 0, minGyms: 0, maxGyms: 0 });
 
-  const load = async () => {
-    try {
-      const data = await api.get<CommissionRate[]>('/commission/rates');
-      setRates(Array.isArray(data) ? data : []);
-    } catch {
-      setRates([]);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    let alive = true;
 
-  useEffect(() => { load(); }, []);
+    Promise.all([
+      api.get('/subscriptions/plans').catch(() => null),
+      api.get('/gyms?limit=200').catch(() => null),
+      api.get('/wellness/admin/partners').catch(() => null),
+    ]).then(([planRes, gymRes, wellnessRes]) => {
+      if (!alive) return;
+      setPlans(planRes || null);
+      setGyms(asArray(gymRes));
+      setWellnessPartners(asArray(wellnessRes));
+      setAvailability({ plans: Boolean(planRes), gyms: Boolean(gymRes), wellness: Boolean(wellnessRes) });
+    }).finally(() => {
+      if (alive) setLoading(false);
+    });
 
-  const startEdit = (r: CommissionRate) => {
-    setEditingId(r.id);
-    setEditValues({ commission: r.commission, minGyms: r.minGyms, maxGyms: r.maxGyms });
-  };
+    return () => { alive = false; };
+  }, []);
 
-  const cancelEdit = () => setEditingId(null);
+  const gymAvg = avg(gyms.map((gym) => Number(gym.commissionRate)));
+  const wellnessAvg = avg(wellnessPartners.map((partner) => Number(partner.commissionRate)));
 
-  const saveEdit = async (id: string) => {
-    try {
-      await api.put(`/commission/rates/${id}`, editValues);
-      toast('Commission rate saved');
-      await load();
-    } catch {
-      toast('Failed to save commission rate', 'error');
-    }
-    setEditingId(null);
-  };
-
-  const avgCommission = rates.length
-    ? `${(rates.reduce((a, r) => a + Number(r.commission || 0), 0) / rates.length).toFixed(1)}%`
-    : '--';
-  const maxCoverage = rates.some((r) => r.maxGyms >= 999)
-    ? 'Unlimited'
-    : rates.length ? String(Math.max(...rates.map((r) => r.maxGyms || 0))) : '--';
+  const cards = [
+    {
+      label: 'Same Gym Checkout Add-on',
+      value: loading ? '...' : !availability.plans ? 'Unavailable' : formatCommission(plans?.same_gym?.commission),
+      detail: 'Added above each gym plan price at checkout',
+      href: '/plans',
+      icon: ListChecks,
+    },
+    {
+      label: 'Day Pass Checkout Add-on',
+      value: loading ? '...' : !availability.plans ? 'Unavailable' : `${formatMoney(plans?.day_pass?.basePrice)} + ${formatCommission(plans?.day_pass?.commission)}`,
+      detail: 'Base day-pass price plus admin add-on',
+      href: '/plans',
+      icon: ListChecks,
+    },
+    {
+      label: 'Gym Revenue Share',
+      value: loading ? '...' : !availability.gyms ? 'Unavailable' : gymAvg == null ? 'Not set' : `${gymAvg.toFixed(1)}% avg`,
+      detail: availability.gyms ? `${gyms.length} gyms loaded from database` : 'Gyms API did not return data',
+      href: '/tiers',
+      icon: Building2,
+    },
+    {
+      label: 'Wellness Commission',
+      value: loading ? '...' : !availability.wellness ? 'Unavailable' : wellnessAvg == null ? 'Not set' : `${wellnessAvg.toFixed(1)}% avg`,
+      detail: availability.wellness ? `${wellnessPartners.length} partners loaded from database` : 'Wellness API did not return data',
+      href: '/wellness',
+      icon: Sparkles,
+    },
+  ];
 
   return (
-    <Shell title="Commission Settings">
-      {/* Stats Row */}
-      <div className="grid grid-cols-3 gap-4 mb-8">
-        {[
-          { label: 'Configured Plan Types', value: loading ? '...' : String(rates.length) },
-          { label: 'Avg Commission Rate', value: loading ? '...' : avgCommission },
-          { label: 'Max Gym Coverage', value: loading ? '...' : maxCoverage },
-        ].map((s) => (
-          <div key={s.label} className="card stat-glow p-5">
-            <div className="text-2xl font-bold mb-1">{s.value}</div>
-            <div className="text-xs" style={{ color: 'var(--t2)' }}>{s.label}</div>
-          </div>
-        ))}
+    <Shell title="Commission Overview">
+      <div style={{ marginBottom: 28 }}>
+        <h1 className="serif" style={{ fontSize: 28, fontWeight: 900, marginBottom: 6 }}>Commission Overview</h1>
+        <p style={{ color: 'var(--t2)', fontSize: 14, maxWidth: 780 }}>
+          This page reads the live commission sources used by checkout, settlements, gym revenue share, and wellness bookings.
+        </p>
       </div>
 
-      {/* Plan Types Table */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+        {cards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <Link key={card.label} href={card.href} className="card stat-glow p-5 block transition hover:bg-white/5">
+              <div className="flex items-center justify-between mb-4">
+                <Icon size={18} style={{ color: 'var(--accent)' }} />
+                <span className="accent-pill text-[10px]">Open</span>
+              </div>
+              <div className="text-2xl font-bold mb-1">{card.value}</div>
+              <div className="text-xs mb-2" style={{ color: 'var(--t2)' }}>{card.label}</div>
+              <div className="text-[11px]" style={{ color: 'var(--t3)' }}>{card.detail}</div>
+            </Link>
+          );
+        })}
+      </div>
+
       <div className="glass p-6">
-        <h3 className="serif text-lg mb-4">Plan Commission Rates</h3>
-        {loading ? (
-          Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="animate-pulse h-8 rounded mb-2" style={{ background: 'var(--surface)' }} />
-          ))
-        ) : (
-          <table className="glass-table">
-            <thead>
-              <tr>
-                <th>Plan Type</th>
-                <th>Commission %</th>
-                <th>Min Gyms</th>
-                <th>Max Gyms</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rates.map((r) => (
-                <tr key={r.id}>
-                  <td className="font-semibold text-white">{r.planType}</td>
-                  {editingId === r.id ? (
-                    <>
-                      <td>
-                        <input
-                          type="number"
-                          className="glass-input w-16 text-center"
-                          value={editValues.commission}
-                          onChange={(e) => setEditValues((v) => ({ ...v, commission: Number(e.target.value) }))}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          className="glass-input w-16 text-center"
-                          value={editValues.minGyms}
-                          onChange={(e) => setEditValues((v) => ({ ...v, minGyms: Number(e.target.value) }))}
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          className="glass-input w-16 text-center"
-                          value={editValues.maxGyms}
-                          onChange={(e) => setEditValues((v) => ({ ...v, maxGyms: Number(e.target.value) }))}
-                        />
-                      </td>
-                      <td className="flex gap-2">
-                        <button className="btn btn-primary text-xs" onClick={() => saveEdit(r.id)}>Save</button>
-                        <button className="btn btn-ghost text-xs" onClick={cancelEdit}>Cancel</button>
-                      </td>
-                    </>
-                  ) : (
-                    <>
-                      <td style={{ color: 'var(--accent)' }}>{r.commission}%</td>
-                      <td>{r.minGyms}</td>
-                      <td>{r.maxGyms === 999 ? 'Unlimited' : r.maxGyms}</td>
-                      <td>
-                        <button className="btn btn-ghost text-xs" onClick={() => startEdit(r)}>Edit</button>
-                      </td>
-                    </>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+        <h3 className="serif text-lg mb-4">Source Mapping</h3>
+        <table className="glass-table">
+          <thead>
+            <tr><th>Area</th><th>Managed From</th><th>Used For</th><th></th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="font-semibold text-white">Same Gym and Day Pass checkout</td>
+              <td>Plan Management</td>
+              <td>Final user payment amount before Cashfree order creation</td>
+              <td><Link className="btn btn-ghost text-xs" href="/plans">Open</Link></td>
+            </tr>
+            <tr>
+              <td className="font-semibold text-white">Per-gym revenue share</td>
+              <td>Tier Management / Gym Management</td>
+              <td>Gym settlements, scanner earnings, check-in revenue split</td>
+              <td><Link className="btn btn-ghost text-xs" href="/tiers">Open</Link></td>
+            </tr>
+            <tr>
+              <td className="font-semibold text-white">Wellness partner commission</td>
+              <td>Wellness Services</td>
+              <td>Wellness booking commission and partner net earnings</td>
+              <td><Link className="btn btn-ghost text-xs" href="/wellness">Open</Link></td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </Shell>
   );

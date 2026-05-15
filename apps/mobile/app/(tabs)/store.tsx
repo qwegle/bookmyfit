@@ -68,7 +68,7 @@ export default function Store() {
 
   return (
     <AuroraBackground>
-    <SafeAreaView style={{ flex: 1 }}>
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
       <ScrollView style={s.scroll} contentContainerStyle={s.container} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={s.titleRow}>
@@ -163,7 +163,7 @@ export default function Store() {
 
 const s = StyleSheet.create({
   scroll: { flex: 1 },
-  container: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 36 },
+  container: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 16 },
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   title: { fontFamily: fonts.serif, fontSize: 26, color: '#fff', letterSpacing: -0.5 },
   cartWrap: { position: 'relative', width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },

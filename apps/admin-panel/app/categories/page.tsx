@@ -49,8 +49,8 @@ export default function CategoriesPage() {
         api.get('/master/categories'),
         api.get('/master/amenities/all'),
       ]);
-      const catArr: Category[] = Array.isArray(cats) ? cats : cats?.data ?? [];
-      const amenArr: Amenity[] = Array.isArray(amens) ? amens : amens?.data ?? [];
+      const catArr: Category[] = Array.isArray(cats) ? cats : Array.isArray(cats?.data) ? cats.data : [];
+      const amenArr: Amenity[] = Array.isArray(amens) ? amens : Array.isArray(amens?.data) ? amens.data : [];
       setCategories(catArr);
       setAmenities(amenArr.filter((a) => (a.status || 'approved') === 'approved' && a.isActive !== false));
       setPending(amenArr.filter((a) => a.status === 'pending'));

@@ -8,9 +8,9 @@ import { IconHome, IconSearch, IconCalendar, IconTicket, IconUser } from '../../
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
-  // Some Android devices report a tiny inset while the 3-button nav bar still overlaps UI.
-  const tabBarBottomPad = Math.max(insets.bottom, Platform.OS === 'android' ? 30 : 10);
-  const tabBarHeight = 62 + tabBarBottomPad;
+  const minBottomPad = Platform.OS === 'android' ? 8 : 10;
+  const tabBarBottomPad = Math.max(insets.bottom, minBottomPad);
+  const tabBarHeight = 58 + tabBarBottomPad;
 
   useFocusEffect(
     useCallback(() => {
@@ -39,14 +39,14 @@ export default function TabsLayout() {
           borderTopColor: colors.border,
           borderTopWidth: 1,
           height: tabBarHeight,
-          paddingTop: 8,
+          paddingTop: 6,
           paddingBottom: tabBarBottomPad,
           elevation: 18,
           shadowColor: '#000',
           shadowOpacity: 0.35,
           shadowRadius: 12,
         },
-        tabBarItemStyle: { paddingVertical: 2 },
+        tabBarItemStyle: { paddingVertical: 0 },
         tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.t2,

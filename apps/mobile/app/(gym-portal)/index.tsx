@@ -90,7 +90,7 @@ export default function GymDashboard() {
   }
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeAreaView style={s.safe} edges={['top', 'left', 'right']}>
       {/* Aurora decorative circles */}
       <View style={s.aurora1} pointerEvents="none" />
       <View style={s.aurora2} pointerEvents="none" />
@@ -192,7 +192,7 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.bg },
   loader: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' },
   scroll: { flex: 1 },
-  content: { paddingHorizontal: spacing.xl, paddingBottom: 36 },
+  content: { paddingHorizontal: spacing.xl, paddingBottom: 16 },
 
   aurora1: {
     position: 'absolute', top: -60, right: -60,

@@ -422,9 +422,13 @@ class SubscriptionsService {
     // Prod: fetch Cashfree order status
     const payment = await this.cashfree.fetchPaidStatus(sub.razorpayOrderId);
     if (payment.paid) {
-      await this.repo.update(subId, { status: 'active' });
+      await this.repo.update(subId, {
+        status: 'active',
+        razorpayPaymentId: payment.paymentId || sub.razorpayPaymentId,
+      });
       await this.trainerBookings.update({ cashfreeOrderId: sub.razorpayOrderId }, { status: 'confirmed' });
       sub.status = 'active';
+      sub.razorpayPaymentId = payment.paymentId || sub.razorpayPaymentId;
     }
     return { success: sub.status === 'active', subscription: sub, paymentStatus: payment.paid ? 'PAID' : payment.orderStatus || 'unknown' };
   }

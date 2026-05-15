@@ -12,6 +12,7 @@ import {
 } from '../../components/Icons';
 import { API_BASE, appStorage, subscriptionsApi } from '../../lib/api';
 import { accessLabelForSubscription, getActiveSubscriptionAccess, normalizeSubscriptionList } from '../../lib/subscriptionAccess';
+import { applyPassCommission, positiveNumber } from '../../lib/passPricing';
 import {
   DEFAULT_GYM_IMAGE,
   DEFAULT_HOMEPAGE_HERO_IMAGE,
@@ -125,6 +126,7 @@ export default function Home() {
   const [activeGymSubs, setActiveGymSubs] = useState<Map<string, any>>(new Map());
   const [multiGymSub, setMultiGymSub] = useState<any>(null);
   const [hasMultiGymSub, setHasMultiGymSub] = useState(false);
+  const [passPricingConfig, setPassPricingConfig] = useState<any>(null);
   const heroRef = useRef<FlatList>(null);
 
   useEffect(() => {
@@ -177,6 +179,12 @@ export default function Home() {
       .then((r) => r.json())
       .then((data: any) => setHomeProducts(listFrom(data, ['products']).slice(0, 8)))
       .catch(() => setHomeProducts([]));
+  }, []);
+
+  useEffect(() => {
+    subscriptionsApi.plans()
+      .then((data: any) => setPassPricingConfig(data || null))
+      .catch(() => setPassPricingConfig(null));
   }, []);
 
   useEffect(() => {
@@ -249,7 +257,7 @@ export default function Home() {
 
   if (loading) {
     return (
-      <SafeAreaView style={s.root}>
+      <SafeAreaView style={s.root} edges={['top', 'left', 'right']}>
         <ScrollView contentContainerStyle={s.container} showsVerticalScrollIndicator={false}>
           <View style={s.topBar}>
             <View style={s.locationRow}>
@@ -267,7 +275,7 @@ export default function Home() {
   }
 
   return (
-    <SafeAreaView style={s.root}>
+    <SafeAreaView style={s.root} edges={['top', 'left', 'right']}>
       <ScrollView style={s.scroll} contentContainerStyle={s.container} showsVerticalScrollIndicator={false}>
 
         {/* ── Top bar ── */}
@@ -322,6 +330,7 @@ export default function Home() {
                   activeGymSubs={activeGymSubs}
                   multiGymSub={multiGymSub}
                   hasMultiGymSub={hasMultiGymSub}
+                  passPricingConfig={passPricingConfig}
                 />
                 {!hasWellnessAfterFeatured && <WellnessServicesSection services={wellnessServices} />}
               </View>
@@ -341,6 +350,7 @@ export default function Home() {
             activeGymSubs={activeGymSubs}
             multiGymSub={multiGymSub}
             hasMultiGymSub={hasMultiGymSub}
+            passPricingConfig={passPricingConfig}
           />
         ) : null}
 
@@ -470,12 +480,14 @@ function GymListingSection({
   activeGymSubs,
   multiGymSub,
   hasMultiGymSub,
+  passPricingConfig,
 }: {
   section: any;
   subscribedGymIds: Set<string>;
   activeGymSubs: Map<string, any>;
   multiGymSub: any;
   hasMultiGymSub: boolean;
+  passPricingConfig: any;
 }) {
   const gyms: any[] = section.gyms || [];
   if (!gyms.length) return null;
@@ -490,6 +502,8 @@ function GymListingSection({
           const city = [g.area, g.city].filter(Boolean).join(', ');
           const hasAccess = hasMultiGymSub || subscribedGymIds.has(String(gid));
           const accessLabel = accessLabelForSubscription(activeGymSubs.get(String(gid)) || multiGymSub, hasMultiGymSub);
+          const baseDayPassPrice = positiveNumber(g.dayPassPrice || g.day_pass_price) || positiveNumber(passPricingConfig?.day_pass?.basePrice);
+          const displayDayPassPrice = applyPassCommission(baseDayPassPrice, passPricingConfig?.day_pass?.commission);
 
           return (
             <TouchableOpacity
@@ -531,7 +545,7 @@ function GymListingSection({
                 </View>
                 <View style={s.gymListBottomRow}>
                   <Text style={s.gymListPrice} numberOfLines={1}>
-                    {hasAccess ? 'Ready to book sessions' : (g.dayPassPrice ? `From Rs ${Number(g.dayPassPrice).toLocaleString('en-IN')}/day` : 'Plans available')}
+                    {hasAccess ? 'Ready to book sessions' : (displayDayPassPrice ? `From Rs ${displayDayPassPrice.toLocaleString('en-IN')}/day` : 'Plans available')}
                   </Text>
                   <TouchableOpacity
                     style={[s.gymListCta, hasAccess && s.gymListBookCta]}
@@ -559,12 +573,14 @@ function FeaturedGymsSection({
   activeGymSubs,
   multiGymSub,
   hasMultiGymSub,
+  passPricingConfig,
 }: {
   section: any;
   subscribedGymIds: Set<string>;
   activeGymSubs: Map<string, any>;
   multiGymSub: any;
   hasMultiGymSub: boolean;
+  passPricingConfig: any;
 }) {
   const gyms: any[] = section.gyms || [];
   if (!gyms.length) return null;
@@ -578,6 +594,8 @@ function FeaturedGymsSection({
           const gid = g.id || g._id;
           const hasAccess = hasMultiGymSub || subscribedGymIds.has(String(gid));
           const accessLabel = accessLabelForSubscription(activeGymSubs.get(String(gid)) || multiGymSub, hasMultiGymSub);
+          const baseDayPassPrice = positiveNumber(g.dayPassPrice || g.day_pass_price) || positiveNumber(passPricingConfig?.day_pass?.basePrice);
+          const displayDayPassPrice = applyPassCommission(baseDayPassPrice, passPricingConfig?.day_pass?.commission);
           return (
             <TouchableOpacity key={gid} style={s.gymFeatOuter} onPress={() => router.push({
               pathname: `/gym/${gid}` as any,
@@ -603,8 +621,8 @@ function FeaturedGymsSection({
                   <Text style={s.gymFeatCity} numberOfLines={1}>{g.city || ''}</Text>
                   {hasAccess ? (
                     <Text style={s.gymFeatSubscribed}>{accessLabel}</Text>
-                  ) : g.dayPassPrice ? (
-                    <Text style={s.gymFeatPrice}>From ₹{g.dayPassPrice}/day</Text>
+                  ) : displayDayPassPrice ? (
+                    <Text style={s.gymFeatPrice}>From Rs {displayDayPassPrice.toLocaleString('en-IN')}/day</Text>
                   ) : null}
                   </View>
                 </ImageBackground>
@@ -713,7 +731,7 @@ function RankNumber({ value }: { value: number }) {
 const s = StyleSheet.create({
   root:   { flex: 1, backgroundColor: colors.bg },
   scroll: { flex: 1 },
-  container: { paddingBottom: 36 },
+  container: { paddingBottom: 16 },
 
   // Top bar
   topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingHorizontal: 20, paddingTop: 12, paddingBottom: 4 },

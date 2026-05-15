@@ -64,7 +64,7 @@ export default function Earnings() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top', 'left', 'right']}>
       <View style={s.header}>
         <TouchableOpacity style={s.back} onPress={() => router.back()}>
           <IconArrowLeft size={18} color="#fff" />
@@ -167,7 +167,7 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center',
   },
   headerTitle: { fontFamily: fonts.serif, fontSize: 20, color: '#fff' },
-  scroll: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 36 },
+  scroll: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 16 },
   heroCard: {
     height: 160, borderRadius: radius.xl, overflow: 'hidden',
     marginBottom: 24, position: 'relative',

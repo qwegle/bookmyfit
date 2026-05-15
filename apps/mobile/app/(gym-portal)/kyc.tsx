@@ -71,7 +71,7 @@ export default function KycTracker() {
   const remaining = steps.length - doneCount;
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.bg }} edges={['top', 'left', 'right']}>
       <View style={s.header}>
         <TouchableOpacity style={s.back} onPress={() => router.back()}>
           <IconArrowLeft size={18} color="#fff" />
@@ -151,7 +151,7 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center',
   },
   headerTitle: { fontFamily: fonts.serif, fontSize: 20, color: '#fff' },
-  scroll: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 36 },
+  scroll: { paddingHorizontal: 20, paddingTop: 4, paddingBottom: 16 },
   progressCard: {
     backgroundColor: 'rgba(0,212,106,0.06)',
     borderWidth: 1, borderColor: 'rgba(0,212,106,0.18)',

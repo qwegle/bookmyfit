@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { Fragment, useState, useEffect } from 'react';
 import Shell from '../../components/Shell';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/Toast';
@@ -188,8 +188,8 @@ export default function KYCPage() {
                   </tr>
                 )
                 : gyms.map((g) => (
-                  <>
-                    <tr key={g.id}>
+                  <Fragment key={g.id}>
+                    <tr>
                       <td className="font-semibold" style={{ color: '#fff' }}>{g.name}</td>
                       <td style={{ color: 'var(--t2)' }}>{g.ownerName || '—'}</td>
                       <td>{g.city}</td>
@@ -288,8 +288,8 @@ export default function KYCPage() {
                         </td>
                       </tr>
                     )}
-                  </>
-                ))}
+                    </Fragment>
+                  ))}
           </tbody>
         </table>
       </div>

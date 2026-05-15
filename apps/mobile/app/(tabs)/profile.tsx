@@ -53,7 +53,7 @@ export default function Profile() {
 
   return (
     <AuroraBackground>
-    <SafeAreaView style={{ flex: 1 }}>
+    <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={s.container} showsVerticalScrollIndicator={false}>
 
         {/* Avatar & Name */}
@@ -123,7 +123,7 @@ export default function Profile() {
 }
 
 const s = StyleSheet.create({
-  container: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 36 },
+  container: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 16 },
   avatarSection: { alignItems: 'center', marginBottom: 20 },
   avatar: {
     width: 80, height: 80, borderRadius: 40,

@@ -43,6 +43,7 @@ type Partner = {
   id: string; name: string; serviceType: string; city: string; area: string;
   address: string; rating: number; reviewCount: number; status: string;
   discountPercent: number; distanceLabel: string; photos: string[]; commissionRate: number;
+  lat?: number; lng?: number;
 };
 type Service = {
   id: string; name: string; category: string; price: number; originalPrice: number | null;
@@ -53,6 +54,13 @@ type ApprovalStatus = NonNullable<Service['approvalStatus']>;
 
 const defaultPartnerForm = { name: '', serviceType: 'Spa', city: '', area: '', address: '', status: 'active', discountPercent: '0', distanceLabel: '', commissionRate: '', photos: '' };
 const defaultServiceForm = { name: '', category: 'Massage', price: '', originalPrice: '', durationMinutes: '60', partnerId: '', imageUrl: '', isActive: true, approvalStatus: 'approved' };
+
+function asArray(value: any) {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.items)) return value.items;
+  return [];
+}
 
 export default function WellnessPage() {
   const [tab, setTab] = useState<'centres' | 'services'>('centres');
@@ -78,10 +86,8 @@ export default function WellnessPage() {
       api.get('/wellness/admin/partners').catch(() => null),
       api.get('/wellness/admin/services').catch(() => null),
     ]).then(([partnersRes, servicesRes]) => {
-      const pts = (partnersRes as any)?.data || partnersRes;
-      const svcs = servicesRes;
-      setPartners(Array.isArray(pts) ? pts as Partner[] : []);
-      setServices(Array.isArray(svcs) ? svcs as Service[] : []);
+      setPartners(asArray(partnersRes) as Partner[]);
+      setServices(asArray(servicesRes) as Service[]);
     }).catch(() => flash('Could not load wellness data.', 'error')).finally(() => setLoading(false));
   }, []);
 
@@ -103,7 +109,7 @@ export default function WellnessPage() {
       discountPercent: String(p.discountPercent || 0),
       distanceLabel: p.distanceLabel || '',
       commissionRate: String(p.commissionRate ?? ''),
-      photos: (p.photos || []).join(', '),
+      photos: Array.isArray(p.photos) ? p.photos.join(', ') : String(p.photos || ''),
     });
     setShowPartnerForm(true);
   };
@@ -122,7 +128,8 @@ export default function WellnessPage() {
       photos: partnerForm.photos ? partnerForm.photos.split(',').map(s => s.trim()).filter(Boolean) : [],
       rating: editingPartner?.rating || 0,
       reviewCount: editingPartner?.reviewCount || 0,
-      lat: 0, lng: 0,
+      ...(editingPartner && Number.isFinite(Number(editingPartner.lat)) ? { lat: Number(editingPartner.lat) } : {}),
+      ...(editingPartner && Number.isFinite(Number(editingPartner.lng)) ? { lng: Number(editingPartner.lng) } : {}),
     };
     try {
       if (editingPartner) {

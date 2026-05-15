@@ -144,7 +144,7 @@ export default function Subscriptions() {
 
   return (
     <AuroraBackground variant="premium">
-      <SafeAreaView style={{ flex: 1 }}>
+      <SafeAreaView style={{ flex: 1 }} edges={['top', 'left', 'right']}>
         <ScrollView contentContainerStyle={s.container} showsVerticalScrollIndicator={false}>
           {/* Header */}
           <View style={s.pageHeader}>
@@ -370,7 +370,7 @@ export default function Subscriptions() {
 }
 
 const s = StyleSheet.create({
-  container: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 36 },
+  container: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 16 },
   pageHeader: { marginBottom: 20, paddingHorizontal: 4, flexDirection: 'row', alignItems: 'center', gap: 12 },
   pageTitle: { fontFamily: fonts.serif, fontSize: 28, color: '#fff', letterSpacing: -0.5 },
   pageSub: { fontFamily: fonts.sans, fontSize: 12, color: colors.t2, marginTop: 4 },

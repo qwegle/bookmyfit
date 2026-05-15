@@ -28,7 +28,7 @@ const NAV = [
   ]},
   { group: 'Revenue', items: [
     { href: '/settlements', label: 'Settlements', icon: DollarSign },
-    { href: '/commission', label: 'Commission Engine', icon: Percent },
+    { href: '/commission', label: 'Commission Overview', icon: Percent },
   ]},
   { group: 'Content', items: [
     { href: '/homepage', label: 'Homepage Builder', icon: HomeIcon },
