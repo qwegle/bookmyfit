@@ -308,7 +308,7 @@ class GymsService {
       return qb.andWhere('s.status = :status', { status: opts.status });
     };
 
-    const qb = applyStatus(applySearch(makeBaseQuery())).orderBy('s."createdAt"', 'DESC');
+    const qb = applyStatus(applySearch(makeBaseQuery())).orderBy('s.createdAt', 'DESC');
     const [subs, total] = await qb.skip(skip).take(limit).getManyAndCount();
 
     const statsBase = applySearch(makeBaseQuery());
