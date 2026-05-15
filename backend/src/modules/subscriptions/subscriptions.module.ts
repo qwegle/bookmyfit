@@ -243,7 +243,7 @@ class SubscriptionsService {
 
   /**
    * Creates a subscription + Cashfree payment order.
-   * - day_pass: no gym required, durationMonths=0.
+   * - day_pass: requires gymId, durationMonths=0.
    * - same_gym: requires gymId.
    * - multi_gym: no gym selection required.
    */
@@ -292,19 +292,17 @@ class SubscriptionsService {
       const price = config.multi_gym?.basePrice || 1499;
       amount = price * (durationMonths || 1);
     } else if (dto.planType === 'day_pass') {
-      if (dto.gymId && uuidRe.test(dto.gymId)) gymIds = [dto.gymId];
-      if (dto.gymId && uuidRe.test(dto.gymId)) {
-        const gym = await this.gymRepo.createQueryBuilder('g')
-          .select('g.id', 'id')
-          .addSelect('g."dayPassPrice"', 'dayPassPrice')
-          .where('g.id = :id', { id: dto.gymId })
-          .getRawOne();
-        if (!gym) throw new BadRequestException('Gym not found');
-        await this.assertNoActiveGymPass(userId, dto.gymId);
-        amount = this.amountWithCheckoutCommission(Number(gym.dayPassPrice || config.day_pass?.basePrice || 149), 'day_pass', config);
-      } else {
-        amount = this.amountWithCheckoutCommission(Number(config.day_pass?.basePrice || 149), 'day_pass', config);
-      }
+      if (!dto.gymId) throw new BadRequestException('Select a gym before buying a 1-Day Pass');
+      if (!uuidRe.test(dto.gymId)) throw new BadRequestException('Invalid gymId format');
+      gymIds = [dto.gymId];
+      const gym = await this.gymRepo.createQueryBuilder('g')
+        .select('g.id', 'id')
+        .addSelect('g."dayPassPrice"', 'dayPassPrice')
+        .where('g.id = :id', { id: dto.gymId })
+        .getRawOne();
+      if (!gym) throw new BadRequestException('Gym not found');
+      await this.assertNoActiveGymPass(userId, dto.gymId);
+      amount = this.amountWithCheckoutCommission(Number(gym.dayPassPrice || config.day_pass?.basePrice || 149), 'day_pass', config);
     } else {
       throw new BadRequestException('Invalid planType. Use day_pass, same_gym, or multi_gym');
     }

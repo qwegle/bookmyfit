@@ -1,4 +1,4 @@
-import { Module, Controller, Post, Body, Req, Headers, HttpCode, BadRequestException, Injectable, Param, UseGuards } from '@nestjs/common';
+import { Module, Controller, Post, Body, Req, Headers, HttpCode, BadRequestException, Injectable, Param, UseGuards, Get, Query, Header } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -137,6 +137,50 @@ class PaymentsController {
   @ApiOperation({ summary: 'Verify a Cashfree order and update matching BookMyFit record' })
   verifyOrder(@Param('orderId') orderId: string) {
     return this.svc.verifyOrder(orderId);
+  }
+
+  @Get('return')
+  @Header('Content-Type', 'text/html')
+  @ApiOperation({ summary: 'Cashfree browser return URL' })
+  paymentReturn(@Query('order_id') orderId = '', @Query('order_status') orderStatus = '') {
+    const query = new URLSearchParams({
+      order_id: orderId,
+      order_status: orderStatus || 'RETURNED',
+    }).toString();
+    const deepLink = `bookmyfit://payment-return?${query}`;
+    const message = JSON.stringify({
+      type: 'PAYMENT_RETURN',
+      payload: { orderId, orderStatus: orderStatus || 'RETURNED' },
+    });
+    return `<!doctype html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BookMyFit Payment</title>
+    <style>
+      body{margin:0;min-height:100vh;background:#060606;color:#fff;font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;box-sizing:border-box}
+      a{display:inline-block;margin-top:18px;color:#060606;background:#ccff00;border-radius:999px;padding:12px 18px;text-decoration:none;font-weight:700}
+      p{color:rgba(255,255,255,.65);line-height:1.5}
+    </style>
+  </head>
+  <body>
+    <main>
+      <h2>Confirming your payment</h2>
+      <p>You can return to BookMyFit now. The app will verify this payment automatically.</p>
+      <a href="${deepLink}">Return to BookMyFit</a>
+    </main>
+    <script>
+      (function(){
+        try {
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(${JSON.stringify(message)});
+          }
+        } catch (e) {}
+        setTimeout(function(){ window.location.href = ${JSON.stringify(deepLink)}; }, 250);
+      })();
+    </script>
+  </body>
+</html>`;
   }
 
   @Post('webhook')

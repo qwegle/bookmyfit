@@ -3,7 +3,7 @@ import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
 import { Repository, Between, Brackets, In } from 'typeorm';
 import { paginate, paginatedResponse } from '../../common/pagination.helper';
 import { ApiTags } from '@nestjs/swagger';
-import { GymEntity, GymStatus } from '../../database/entities/gym.entity';
+import { GymEntity, GymPlanEntity, GymStatus } from '../../database/entities/gym.entity';
 import { SubscriptionEntity } from '../../database/entities/subscription.entity';
 import { UserEntity } from '../../database/entities/user.entity';
 import { CheckinEntity } from '../../database/entities/checkin.entity';
@@ -22,6 +22,7 @@ class GymsService {
     @InjectRepository(CheckinEntity) private readonly checkins: Repository<CheckinEntity>,
     @InjectRepository(AmenityEntity) private readonly amenities: Repository<AmenityEntity>,
     @InjectRepository(GymScheduleEntity) private readonly schedules: Repository<GymScheduleEntity>,
+    @InjectRepository(GymPlanEntity) private readonly gymPlans: Repository<GymPlanEntity>,
   ) {}
 
   private safeGymQuery(alias = 'g') {
@@ -270,9 +271,11 @@ class GymsService {
     const makeBaseQuery = () => this.subs
       .createQueryBuilder('s')
       .leftJoin(UserEntity, 'u', 'u.id = s."userId"')
+      .leftJoin(GymPlanEntity, 'gp', 'gp.id = s."gymPlanId" AND gp."gymId" = :gymId', { gymId: gym.id })
       .where(new Brackets((where) => {
         where
           .where(':gymId = ANY(s."gymIds")', { gymId: gym.id })
+          .orWhere('gp.id IS NOT NULL')
           .orWhere(`(
             s."planType" = :multiGym
             AND EXISTS (
@@ -319,8 +322,11 @@ class GymsService {
     const today = new Date(); today.setHours(0,0,0,0);
     const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
     const userIds = [...new Set(subs.map((s) => s.userId).filter(Boolean))];
+    const gymPlanIds = [...new Set(subs.map((s) => s.gymPlanId).filter(Boolean))];
     const users = userIds.length ? await this.users.find({ where: { id: In(userIds) } }) : [];
     const userMap = new Map(users.map((u) => [u.id, u]));
+    const planRows = gymPlanIds.length ? await this.gymPlans.find({ where: { id: In(gymPlanIds as string[]) } }) : [];
+    const planMap = new Map(planRows.map((p) => [p.id, p]));
     const todayRows = userIds.length ? await this.checkins
       .createQueryBuilder('c')
       .select('c."userId"', 'userId')
@@ -336,9 +342,11 @@ class GymsService {
 
     const data = subs.map(s => {
       const user = userMap.get(s.userId);
+      const gymPlan = s.gymPlanId ? planMap.get(s.gymPlanId) : null;
+      const belongsByGymPlan = gymPlan?.gymId === gym.id;
       const isExpired = s.endDate ? String(s.endDate).slice(0, 10) < todayIso : false;
-      const gymCount = (s.gymIds || []).length;
-      const canDeactivate = s.planType !== 'multi_gym' && (s.gymIds || []).includes(gym.id);
+      const gymCount = Math.max((s.gymIds || []).length, belongsByGymPlan ? 1 : 0);
+      const canDeactivate = s.planType !== 'multi_gym' && ((s.gymIds || []).includes(gym.id) || belongsByGymPlan);
       (s as any).userPhone = user?.phone || user?.email || '-';
       return {
         id: s.id,
@@ -346,6 +354,7 @@ class GymsService {
         name: user?.name || user?.email || `User-${s.userId.slice(0, 6)}`,
         phone: (s as any).userPhone || '—',
         planType: s.planType,
+        planName: gymPlan?.name || null,
         gymType: s.planType === 'multi_gym' ? 'Multi Gym' : 'Single Gym',
         gymCount: s.planType === 'multi_gym' ? Math.max(gymCount, 1) : gymCount,
         status: s.status === 'cancelled' ? 'cancelled' : (isExpired ? 'expired' : s.status),
@@ -375,7 +384,11 @@ class GymsService {
     const sub = await this.subs.findOne({ where: { id: subId } });
     if (!sub) throw new NotFoundException('Subscription not found');
     if (sub.planType === 'multi_gym') throw new ForbiddenException('Multi-gym passes are managed by the platform admin');
-    if (!(sub.gymIds || []).includes(gym.id)) throw new NotFoundException('Member not in this gym');
+    const belongsByGymIds = (sub.gymIds || []).includes(gym.id);
+    const plan = !belongsByGymIds && sub.gymPlanId
+      ? await this.gymPlans.findOne({ where: { id: sub.gymPlanId } })
+      : null;
+    if (!belongsByGymIds && plan?.gymId !== gym.id) throw new NotFoundException('Member not in this gym');
     await this.subs.update(subId, { status: 'cancelled' as any });
     return { success: true, message: 'Member subscription deactivated' };
   }
@@ -705,7 +718,7 @@ class GymsController {
 }
 
 @Module({
-  imports: [TypeOrmModule.forFeature([GymEntity, SubscriptionEntity, UserEntity, CheckinEntity, AmenityEntity, GymScheduleEntity])],
+  imports: [TypeOrmModule.forFeature([GymEntity, GymPlanEntity, SubscriptionEntity, UserEntity, CheckinEntity, AmenityEntity, GymScheduleEntity])],
   controllers: [GymsController],
   providers: [GymsService],
   exports: [GymsService],

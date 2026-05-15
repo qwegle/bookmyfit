@@ -39,6 +39,10 @@ function SkeletonCard() {
 
 export default function PlansPage() {
   const { toast } = useToast();
+  const [gymId, setGymId] = useState('');
+  const [dayPassPrice, setDayPassPrice] = useState('');
+  const [editingDayPass, setEditingDayPass] = useState(false);
+  const [tempDayPassPrice, setTempDayPassPrice] = useState('');
   const [plans, setPlans] = useState<GymPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -49,9 +53,21 @@ export default function PlansPage() {
 
   const load = () => {
     setLoading(true);
-    api.get<any>('/gym-plans/my-gym')
-      .then((res) => setPlans(Array.isArray(res) ? res : res?.data ?? []))
-      .catch(() => setPlans([]))
+    Promise.all([
+      api.get<any>('/gym-plans/my-gym').catch(() => []),
+      api.get<any>('/gyms/my-gym').catch(() => null),
+    ])
+      .then(([planRes, gymRes]) => {
+        setPlans(Array.isArray(planRes) ? planRes : planRes?.data ?? []);
+        const gym = gymRes?.data ?? gymRes;
+        setGymId(gym?._id || gym?.id || '');
+        setDayPassPrice(gym?.dayPassPrice != null ? String(gym.dayPassPrice) : '');
+      })
+      .catch(() => {
+        setPlans([]);
+        setGymId('');
+        setDayPassPrice('');
+      })
       .finally(() => setLoading(false));
   };
 
@@ -111,6 +127,35 @@ export default function PlansPage() {
       load();
     } catch (err: any) {
       toast(err.message || 'Failed to delete plan', 'error');
+    }
+  };
+
+  const startDayPassEdit = () => {
+    setTempDayPassPrice(dayPassPrice);
+    setEditingDayPass(true);
+  };
+
+  const cancelDayPassEdit = () => {
+    setDayPassPrice(tempDayPassPrice);
+    setEditingDayPass(false);
+  };
+
+  const saveDayPass = async () => {
+    if (!gymId) {
+      toast('Gym profile is not loaded yet', 'error');
+      return;
+    }
+    const value = dayPassPrice.trim();
+    if (value !== '' && Number(value) <= 0) {
+      toast('Day pass price must be greater than 0', 'error');
+      return;
+    }
+    try {
+      await api.put(`/gyms/${gymId}`, { dayPassPrice: value !== '' ? Number(value) : null });
+      setEditingDayPass(false);
+      toast('Day pass pricing updated');
+    } catch (err: any) {
+      toast(err.message || 'Failed to update day pass pricing', 'error');
     }
   };
 
@@ -187,12 +232,59 @@ export default function PlansPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <p style={{ color: 'var(--t2)', fontSize: 13 }}>
-            Manage your gym's individual subscription plans. These appear in the BMF mobile app for members to purchase directly for your gym.
+            Manage your gym's day pass and individual subscription plans. These appear in the BMF mobile app for members to purchase directly for your gym.
           </p>
         </div>
         <button className="btn btn-primary" onClick={openCreate} style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
           <Plus size={15} /> Add Plan
         </button>
+      </div>
+
+      {/* Day Pass */}
+      <div className="glass card p-5 mb-6" style={{ borderColor: 'rgba(0,212,106,0.18)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 240 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <div style={{ background: 'rgba(0,212,106,0.1)', borderRadius: 10, padding: 9, color: 'var(--accent)' }}>
+                <IndianRupee size={16} />
+              </div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--t)' }}>1-Day Pass</div>
+                <div style={{ fontSize: 12, color: 'var(--t2)' }}>Single-day gym access, managed with your plans.</div>
+              </div>
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--t3)', lineHeight: 1.6, marginTop: 8 }}>
+              Leave blank to use the platform default from admin plan settings. This price is shown on the mobile gym details and checkout screens.
+            </p>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', minWidth: 280 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 12, color: 'var(--t3)', display: 'block', marginBottom: 5 }}>Day Pass Price (Rs.)</label>
+              <input
+                className="glass-input"
+                style={{ width: '100%' }}
+                type="number"
+                min="1"
+                placeholder="Use admin default"
+                value={dayPassPrice}
+                onChange={(e) => setDayPassPrice(e.target.value)}
+                readOnly={!editingDayPass}
+              />
+            </div>
+            {!editingDayPass ? (
+              <button className="btn btn-ghost text-xs" onClick={startDayPassEdit} disabled={loading || !gymId}>
+                <Edit2 size={12} /> Edit
+              </button>
+            ) : (
+              <>
+                <button className="btn btn-primary text-xs" onClick={saveDayPass}>
+                  <Check size={12} /> Save
+                </button>
+                <button className="btn btn-ghost text-xs" onClick={cancelDayPassEdit}>Cancel</button>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Stats */}

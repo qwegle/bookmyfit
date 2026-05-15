@@ -1,5 +1,5 @@
-import { useMemo, useState, useRef } from 'react';
-import { View, StyleSheet, ActivityIndicator, Alert, TouchableOpacity, Text, ScrollView } from 'react-native';
+import { useEffect, useMemo, useState, useRef } from 'react';
+import { View, StyleSheet, ActivityIndicator, Alert, TouchableOpacity, Text, ScrollView, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -10,11 +10,44 @@ import { subscriptionsApi, api, API_BASE } from '../lib/api';
 import { clearCart } from './cart';
 
 const CASHFREE_BASE_URL: string =
-  (Constants.expoConfig?.extra as any)?.cashfreeBaseUrl ?? 'https://sandbox.cashfree.com';
+  process.env.EXPO_PUBLIC_CASHFREE_BASE_URL ||
+  (Constants.expoConfig?.extra as any)?.cashfreeBaseUrl ||
+  'https://sandbox.cashfree.com';
 const CASHFREE_MODE = CASHFREE_BASE_URL.includes('sandbox') ? 'sandbox' : 'production';
-const VERIFY_DELAYS_MS = [0, 1000, 1500, 2000, 2500, 3000, 4000];
+const VERIFY_DELAYS_MS = [0, 1000, 2000, 3000, 5000, 8000, 12000];
+const EXTERNAL_PAYMENT_PREFIXES = [
+  'upi://',
+  'intent://',
+  'tez://',
+  'gpay://',
+  'paytmmp://',
+  'phonepe://',
+  'bhim://',
+  'amazonpay://',
+  'mobikwik://',
+  'credpay://',
+  'navipay://',
+  'myairtel://',
+  'kiwi://',
+];
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const isPaymentReturnUrl = (url: string) => {
+  const lowerUrl = String(url || '').toLowerCase();
+  return (
+    lowerUrl.includes('bookmyfit://payment-return') ||
+    lowerUrl.includes('bookmyfit://payment-success') ||
+    lowerUrl.includes('/api/v1/payments/return') ||
+    lowerUrl.includes('/payments/return') ||
+    lowerUrl.includes('payment-return')
+  );
+};
+
+const isExternalPaymentIntent = (url: string) => {
+  const lowerUrl = String(url || '').toLowerCase();
+  return EXTERNAL_PAYMENT_PREFIXES.some((prefix) => lowerUrl.startsWith(prefix));
+};
 
 export default function PaymentWebview() {
   const {
@@ -244,9 +277,8 @@ export default function PaymentWebview() {
     ) {
       showPaymentFailed();
     } else if (
-      lowerUrl.includes('bookmyfit://payment-success') ||
+      isPaymentReturnUrl(lowerUrl) ||
       lowerUrl.includes('payment_status=success') ||
-      lowerUrl.includes('payment-return') ||
       (lowerUrl.includes('success') && !lowerUrl.includes('cashfree'))
     ) {
       handleSuccess();
@@ -259,27 +291,71 @@ export default function PaymentWebview() {
 
   const handleShouldStart = (request: any) => {
     const url = request?.url || '';
-    if (url.startsWith('bookmyfit://') || url.includes('payment-return')) {
+    if (isPaymentReturnUrl(url)) {
       handlePaymentUrl(url);
       return false;
     }
+
+    if (isExternalPaymentIntent(url)) {
+      Linking.openURL(url).catch(() => {
+        Alert.alert('Payment app not available', 'Please choose another payment method or continue in Cashfree.');
+      });
+      return false;
+    }
+
     return true;
   };
 
-  const injectedJs = `
-    window.cashfreePaymentSuccess = function(data) {
-      window.ReactNativeWebView.postMessage(JSON.stringify({type:'SUCCESS', data}));
-    };
-    window.cashfreePaymentFailure = function(data) {
-      window.ReactNativeWebView.postMessage(JSON.stringify({type:'FAILURE', data}));
-    };
-    true;
-  `;
+  const injectedJs = useMemo(() => {
+    const safeOrderId = JSON.stringify(orderId || '');
+    return `
+      (function() {
+        if (window.__bmfPaymentBridgeInstalled) return true;
+        window.__bmfPaymentBridgeInstalled = true;
+        var orderId = ${safeOrderId};
+        function post(type, payload) {
+          window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({ type: type, payload: payload || {} }));
+        }
+        window.cashfreePaymentSuccess = function(data) { post('SUCCESS', data); };
+        window.cashfreePaymentFailure = function(data) { post('FAILURE', data); };
+        function textOf(node) {
+          return String((node && (node.innerText || node.textContent)) || '').toLowerCase();
+        }
+        function inspectCashfreeReturn() {
+          if (window.__bmfCashfreeReturnPosted) return;
+          var text = textOf(document.body);
+          var isNextStepPage = text.indexOf('taking too long') !== -1 && text.indexOf('go to the next step') !== -1;
+          var looksPaid = text.indexOf('payment successful') !== -1 || text.indexOf('payment completed') !== -1 || text.indexOf('paid successfully') !== -1 || text.indexOf('transaction successful') !== -1;
+          if (isNextStepPage || looksPaid) {
+            window.__bmfCashfreeReturnPosted = true;
+            post('CASHFREE_RETURN_FALLBACK', { orderId: orderId, url: location.href, matched: isNextStepPage ? 'next_step' : 'paid_text' });
+          }
+        }
+        document.addEventListener('click', function(event) {
+          var targetText = textOf(event.target);
+          if (targetText.indexOf('go to the next step') !== -1) {
+            setTimeout(inspectCashfreeReturn, 250);
+          }
+        }, true);
+        setTimeout(inspectCashfreeReturn, 1000);
+        setTimeout(inspectCashfreeReturn, 2500);
+        setInterval(inspectCashfreeReturn, 3000);
+        true;
+      })();
+      true;
+    `;
+  }, [orderId]);
 
   const handleMessage = async (event: any) => {
     try {
       const msg = JSON.parse(event.nativeEvent.data);
       if (msg.type === 'SUCCESS') handleSuccess();
+      else if (msg.type === 'CASHFREE_RETURN_FALLBACK') {
+        await handleSuccess();
+      }
+      else if (msg.type === 'PAYMENT_RETURN') {
+        await handleSuccess();
+      }
       else if (msg.type === 'CHECKOUT_RESULT') {
         const payload = msg.payload || {};
         const status = String(payload.paymentDetails?.paymentMessage || payload.order?.order_status || payload.paymentStatus || payload.status || '').toLowerCase();
@@ -287,8 +363,10 @@ export default function PaymentWebview() {
           showPaymentFailed(payload.error?.message || 'Your payment was not completed. Please try again.');
         } else if (status.includes('failed') || status.includes('drop') || status.includes('cancel')) {
           showPaymentFailed();
-        } else if (status.includes('success') || status.includes('paid') || payload.paymentDetails || payload.order) {
+        } else if (status.includes('success') || status.includes('paid')) {
           await handleSuccess();
+        } else if (payload.redirect) {
+          setLoading(false);
         }
       }
       else if (msg.type === 'FAILURE') {
@@ -296,6 +374,20 @@ export default function PaymentWebview() {
       }
     } catch {}
   };
+
+  useEffect(() => {
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      handlePaymentUrl(url);
+    });
+
+    Linking.getInitialURL()
+      .then((url) => {
+        if (url) handlePaymentUrl(url);
+      })
+      .catch(() => {});
+
+    return () => subscription.remove();
+  }, []);
 
   // ── Mock Payment Screen (dev / sandbox without Cashfree keys) ────────────
   if (isMock && !allowMockPayment) {
@@ -410,11 +502,19 @@ export default function PaymentWebview() {
         ref={webviewRef}
         source={{ html: checkoutHtml, baseUrl: CASHFREE_BASE_URL }}
         originWhitelist={['*']}
-        onLoadEnd={() => setLoading(false)}
+        onLoadEnd={() => {
+          setLoading(false);
+          webviewRef.current?.injectJavaScript(injectedJs);
+        }}
         onNavigationStateChange={handleNavigationChange}
         onShouldStartLoadWithRequest={handleShouldStart}
+        onOpenWindow={(event: any) => {
+          const targetUrl = event?.nativeEvent?.targetUrl || event?.nativeEvent?.url || '';
+          if (targetUrl) handleShouldStart({ url: targetUrl });
+        }}
         onMessage={handleMessage}
         injectedJavaScript={injectedJs}
+        injectedJavaScriptBeforeContentLoaded={injectedJs}
         javaScriptEnabled={true}
         domStorageEnabled={true}
         mixedContentMode="compatibility"

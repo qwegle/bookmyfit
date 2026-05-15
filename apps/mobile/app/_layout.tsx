@@ -8,7 +8,7 @@ import {
   Poppins_700Bold,
   Poppins_800ExtraBold,
 } from '@expo-google-fonts/poppins';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Linking, Platform, StyleSheet, View } from 'react-native';
 import { useEffect, useState } from 'react';
 import { colors } from '../theme/brand';
 import { appStorage, getToken, getUser } from '../lib/api';
@@ -18,6 +18,11 @@ const ONBOARDED_KEY = 'bmf_onboarded';
 
 async function resolveInitialRoute() {
   try {
+    const initialUrl = await Linking.getInitialURL();
+    if (String(initialUrl || '').toLowerCase().includes('payment-return')) {
+      return;
+    }
+
     // First-launch onboarding check
     const onboarded = await appStorage.getItem(ONBOARDED_KEY);
     if (!onboarded) {
@@ -127,6 +132,7 @@ export default function RootLayout() {
         <Stack.Screen name="subscription-detail" options={{ headerShown: false }} />
         <Stack.Screen name="product/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="payment-webview" options={{ headerShown: false, gestureEnabled: false }} />
+        <Stack.Screen name="payment-return" options={{ headerShown: false, gestureEnabled: false }} />
         <Stack.Screen name="nearby" options={{ headerShown: false }} />
         <Stack.Screen name="gyms" options={{ headerShown: false }} />
         <Stack.Screen name="wellness/book-service" options={{ headerShown: false }} />

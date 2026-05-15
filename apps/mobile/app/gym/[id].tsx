@@ -105,6 +105,16 @@ function formatClockRange(start?: any, end?: any, fallback?: any) {
   return text;
 }
 
+function toTextArray(value: any): string[] {
+  const raw = Array.isArray(value)
+    ? value
+    : (typeof value === 'string' ? value.split(',') : []);
+  return [...new Set(raw
+    .map((item: any) => (typeof item === 'string' ? item : (item?.name || item?.label || '')))
+    .map((item: string) => item.trim())
+    .filter(Boolean))];
+}
+
 function coordinate(...values: any[]): number | null {
   for (const value of values) {
     const num = Number(value);
@@ -225,11 +235,14 @@ export default function GymDetail() {
   const rating = gym?.rating || gym?.avgRating || '--';
   const reviewCount = gym?.reviewCount || gym?.ratingsCount || '--';
   const address = gym?.address || gym?.location?.address || '';
+  const contactPhone = gym?.contactPhone || gym?.phone || '';
+  const contactEmail = gym?.contactEmail || gym?.email || '';
+  const website = gym?.website || '';
   const hours = formatClockRange(gym?.openingTime, gym?.closingTime, gym?.openingHours || gym?.timings || '');
   const breakHours = formatClockRange(gym?.breakStartTime, gym?.breakEndTime, gym?.breakHours || null);
   const description = gym?.description || '';
-  const amenities: string[] = gym?.amenities || [];
-  const categories: string[] = gym?.categories || gym?.tags || [];
+  const amenities = toTextArray(gym?.amenities || gym?.amenityNames || gym?.facilities);
+  const categories = toTextArray(gym?.categories || gym?.tags);
   const img = firstImage(gym?.images, gym?.photos, gym?.coverImage, gym?.coverPhoto) || DEFAULT_GYM_IMAGE;
   const heroSource = { uri: img };
   const subscriptionId = activeSub?._id || activeSub?.id;
@@ -607,6 +620,36 @@ export default function GymDetail() {
                     )}
                   </View>
 
+                  <Text style={s.sectionTitle}>Gym Details</Text>
+                  <View style={s.glassCard}>
+                    <View style={s.detailRow}>
+                      <Text style={s.detailLabel}>Address</Text>
+                      <Text style={s.detailValue}>{address || 'Not added yet'}</Text>
+                    </View>
+                    <View style={s.detailRow}>
+                      <Text style={s.detailLabel}>Hours</Text>
+                      <Text style={s.detailValue}>{hours || 'Not added yet'}</Text>
+                    </View>
+                    {breakHours ? (
+                      <View style={s.detailRow}>
+                        <Text style={s.detailLabel}>Break Time</Text>
+                        <Text style={s.detailValue}>{breakHours}</Text>
+                      </View>
+                    ) : null}
+                    <View style={s.detailRow}>
+                      <Text style={s.detailLabel}>Phone</Text>
+                      <Text style={s.detailValue}>{contactPhone || 'Not added yet'}</Text>
+                    </View>
+                    <View style={s.detailRow}>
+                      <Text style={s.detailLabel}>Email</Text>
+                      <Text style={s.detailValue}>{contactEmail || 'Not added yet'}</Text>
+                    </View>
+                    <View style={[s.detailRow, { marginBottom: 0 }]}>
+                      <Text style={s.detailLabel}>Website</Text>
+                      <Text style={s.detailValue}>{website || 'Not added yet'}</Text>
+                    </View>
+                  </View>
+
                   {description ? (
                     <>
                       <Text style={s.sectionTitle}>Description</Text>
@@ -616,9 +659,8 @@ export default function GymDetail() {
                     </>
                   ) : null}
 
-                  {amenities.length > 0 && (
-                    <>
-                      <Text style={s.sectionTitle}>Amenities</Text>
+                  <Text style={s.sectionTitle}>Amenities</Text>
+                  {amenities.length > 0 ? (
                       <View style={s.amenityWrap}>
                         {amenities.map((a: string) => (
                           <View key={a} style={s.amenityPill}>
@@ -629,7 +671,10 @@ export default function GymDetail() {
                           </View>
                         ))}
                       </View>
-                    </>
+                  ) : (
+                    <View style={s.glassCard}>
+                      <Text style={[s.body, { color: colors.t2 }]}>No amenities added by this gym yet.</Text>
+                    </View>
                   )}
 
                   {categories.length > 0 && (
@@ -839,6 +884,9 @@ const s = StyleSheet.create({
     elevation: 6,
   },
   body: { fontFamily: fonts.sans, fontSize: 13, color: colors.t, lineHeight: 20 },
+  detailRow: { marginBottom: 12 },
+  detailLabel: { fontFamily: fonts.sansBold, fontSize: 10, color: colors.t3, textTransform: 'uppercase', letterSpacing: 1 },
+  detailValue: { fontFamily: fonts.sans, fontSize: 13, color: colors.t, lineHeight: 19, marginTop: 3 },
   mapCard: { height: 200, borderRadius: radius.lg, overflow: 'hidden', marginBottom: 14, borderWidth: 1, borderColor: colors.borderGlass },
   mapPlaceholder: { flex: 1, backgroundColor: colors.glass, alignItems: 'center', justifyContent: 'center', padding: 20, gap: 10 },
   mapAddressText: { fontFamily: fonts.sans, fontSize: 13, color: colors.t, textAlign: 'center' },

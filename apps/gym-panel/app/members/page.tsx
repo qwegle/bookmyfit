@@ -11,6 +11,7 @@ type Member = {
   name: string;
   phone: string;
   planType: string;
+  planName?: string | null;
   gymType: 'Single Gym' | 'Multi Gym';
   gymCount: number;
   status: string;
@@ -314,7 +315,12 @@ export default function MembersPage() {
                         <div style={{ fontWeight: 600, color: '#fff', fontSize: 13 }}>{m.name}</div>
                         <div style={{ color: 'var(--t2)', fontSize: 11, fontFamily: 'monospace' }}>{m.phone}</div>
                       </td>
-                      <td><PlanBadge plan={m.planType} /></td>
+                      <td>
+                        <PlanBadge plan={m.planType} />
+                        {m.planName && (
+                          <div style={{ color: 'var(--t2)', fontSize: 11, marginTop: 5 }}>{m.planName}</div>
+                        )}
+                      </td>
                       <td><AccessBadge type={m.gymType} count={m.gymCount} /></td>
                       <td>
                         <div className="flex flex-col gap-1">

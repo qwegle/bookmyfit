@@ -21,11 +21,11 @@ type Member = {
   phone?: string;
   planName?: string;
   planTier?: string;
-  status: 'active' | 'expired';
+  status: 'active' | 'pending' | 'expired' | 'cancelled';
   lastVisit?: string;
 };
 
-type FilterType = 'all' | 'active' | 'expired';
+type FilterType = 'all' | 'active' | 'pending' | 'expired' | 'cancelled';
 
 const TIER_COLORS: Record<string, string> = {
   elite: colors.tierElite,
@@ -75,7 +75,9 @@ export default function MembersScreen() {
         phone: m.phone ?? m.memberPhone,
         planName: m.planName ?? m.plan?.name ?? 'Standard',
         planTier: (m.planTier ?? m.plan?.tier ?? 'standard').toLowerCase(),
-        status: m.status === 'active' ? 'active' : 'expired',
+        status: ['active', 'pending', 'expired', 'cancelled'].includes(String(m.status))
+          ? String(m.status) as Member['status']
+          : 'expired',
         lastVisit: m.lastVisit ?? m.lastCheckin ?? 'No visits',
       }));
       setMembers(list);
@@ -129,9 +131,15 @@ export default function MembersScreen() {
           <View style={[s.planBadge, { backgroundColor: tierColor + '22', borderColor: tierColor + '55' }]}>
             <Text style={[s.planText, { color: tierColor }]}>{item.planName}</Text>
           </View>
-          <View style={[s.statusBadge, item.status === 'active' ? s.statusActive : s.statusExpired]}>
-            <Text style={[s.statusText, item.status === 'active' ? s.statusTextActive : s.statusTextExpired]}>
-              {item.status === 'active' ? 'Active' : 'Expired'}
+          <View style={[
+            s.statusBadge,
+            item.status === 'active' ? s.statusActive : item.status === 'pending' ? s.statusPending : s.statusExpired,
+          ]}>
+            <Text style={[
+              s.statusText,
+              item.status === 'active' ? s.statusTextActive : item.status === 'pending' ? s.statusTextPending : s.statusTextExpired,
+            ]}>
+              {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
             </Text>
           </View>
         </View>
@@ -175,7 +183,7 @@ export default function MembersScreen() {
 
       {/* Filter tabs */}
       <View style={s.filterRow}>
-        {(['all', 'active', 'expired'] as FilterType[]).map((f) => (
+        {(['all', 'active', 'pending', 'expired', 'cancelled'] as FilterType[]).map((f) => (
           <TouchableOpacity
             key={f}
             style={[s.filterTab, filter === f && s.filterTabActive]}
@@ -295,8 +303,10 @@ const s = StyleSheet.create({
     borderRadius: radius.pill, borderWidth: 1,
   },
   statusActive: { backgroundColor: colors.accentSoft, borderColor: colors.accentBorder },
+  statusPending: { backgroundColor: 'rgba(255,180,0,0.12)', borderColor: 'rgba(255,180,0,0.3)' },
   statusExpired: { backgroundColor: 'rgba(255,60,60,0.12)', borderColor: 'rgba(255,60,60,0.3)' },
   statusText: { fontFamily: fonts.sansBold, fontSize: 10 },
   statusTextActive: { color: colors.accent },
+  statusTextPending: { color: '#FFB400' },
   statusTextExpired: { color: colors.error },
 });

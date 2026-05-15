@@ -78,11 +78,6 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [gymId, setGymId] = useState('');
 
-  // Pricing state
-  const [dayPassPrice, setDayPassPrice] = useState('');
-  const [editingPricing, setEditingPricing] = useState(false);
-  const [tempDayPassPrice, setTempDayPassPrice] = useState('');
-
   // General Info state
   const [city, setCity] = useState('');
   const [contactEmail, setContactEmail] = useState('');
@@ -122,7 +117,6 @@ export default function SettingsPage() {
         setCity(data.city ?? '');
         setContactEmail(data.contactEmail ?? '');
         setContactPhone(data.contactPhone ?? '');
-        setDayPassPrice(data.dayPassPrice != null ? String(data.dayPassPrice) : '');
       } catch {
         showToast('Could not load gym settings.');
       } finally {
@@ -165,30 +159,6 @@ export default function SettingsPage() {
     }
     setEditingContact(false);
     showToast('Contact details saved.');
-  }
-
-  function startEditPricing() {
-    setTempDayPassPrice(dayPassPrice);
-    setEditingPricing(true);
-  }
-
-  function cancelPricing() {
-    setDayPassPrice(tempDayPassPrice);
-    setEditingPricing(false);
-  }
-
-  async function savePricing() {
-    try {
-      const endpoint = gymId ? `/gyms/${gymId}` : '/gyms/my-gym';
-      await api.put(endpoint, {
-        dayPassPrice: dayPassPrice !== '' ? Number(dayPassPrice) : null,
-      });
-    } catch (e: any) {
-      showToast(e?.message || 'Pricing was not saved.');
-      return;
-    }
-    setEditingPricing(false);
-    showToast('Pricing saved.');
   }
 
   async function handlePasswordSubmit(e: React.FormEvent) {
@@ -327,63 +297,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Section B - Pricing */}
-      <div className="glass p-6 mb-5">
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-2">
-            <Settings size={18} style={{ color: 'var(--accent)' }} />
-            <span className="serif text-lg text-white">Day Pass Pricing</span>
-          </div>
-          {!editingPricing ? (
-            <button
-              className="btn btn-ghost flex items-center gap-1 text-xs"
-              onClick={startEditPricing}
-              disabled={loading}
-            >
-              <Edit2 size={13} /> Edit
-            </button>
-          ) : (
-            <div className="flex items-center gap-2">
-              <button className="btn btn-primary flex items-center gap-1 text-xs" onClick={savePricing}>
-                <Check size={13} /> Save
-              </button>
-              <button className="btn btn-ghost text-xs" onClick={cancelPricing}>Cancel</button>
-            </div>
-          )}
-        </div>
-        <p className="text-xs mb-4" style={{ color: 'var(--t3)' }}>
-          Leave blank to use the platform day-pass default. Monthly, 3-month, 6-month, and yearly gym memberships are managed from Plans.
-        </p>
-        {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <SkeletonField />
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label style={labelStyle}>Day Pass Price (Rs.)</label>
-              <input
-                className="glass-input w-full"
-                type="number"
-                min="0"
-                placeholder="e.g. 149"
-                value={dayPassPrice}
-                onChange={(e) => setDayPassPrice(e.target.value)}
-                readOnly={!editingPricing}
-                style={!editingPricing ? { opacity: 0.7 } : {}}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Membership Packages</label>
-              <div className="glass-input w-full" style={{ opacity: 0.75 }}>
-                Use the Plans menu for 1, 3, 6, and 12 month packages.
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Section C - Notification Preferences */}
+      {/* Section B - Notification Preferences */}
       <div className="glass p-6 mb-5">
         <div className="flex items-center gap-2 mb-5">
           <Bell size={18} style={{ color: 'var(--accent)' }} />

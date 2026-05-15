@@ -47,6 +47,19 @@ export class CashfreeService {
     return `${phone}@bookmyfit.in`;
   }
 
+  private publicBaseUrl(): string {
+    const raw = process.env.API_BASE_URL || process.env.PUBLIC_APP_URL || 'https://bookmyfit.in';
+    return String(raw).replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
+  }
+
+  private defaultReturnUrl(): string {
+    const baseUrl = this.publicBaseUrl();
+    if (/^https?:\/\//i.test(baseUrl)) {
+      return `${baseUrl}/api/v1/payments/return?order_id={order_id}`;
+    }
+    return 'bookmyfit://payment-return?order_id={order_id}';
+  }
+
   /**
    * Create a Cashfree order. Returns payment_session_id which the
    * mobile/web client uses with the Cashfree SDK to render the checkout.
@@ -74,8 +87,8 @@ export class CashfreeService {
         customer_email: customerEmail,
       },
       order_meta: {
-        return_url: params.returnUrl || 'bookmyfit://payment-return?order_id={order_id}',
-        notify_url: `${process.env.API_BASE_URL || 'http://localhost:3003'}/api/v1/payments/webhook`,
+        return_url: params.returnUrl || this.defaultReturnUrl(),
+        notify_url: `${this.publicBaseUrl()}/api/v1/payments/webhook`,
       },
       order_tags: params.notes || {},
     };
@@ -120,7 +133,12 @@ export class CashfreeService {
           'x-client-secret': this.clientSecret,
         },
       });
-      return await res.json();
+      const data: any = await res.json().catch(() => null);
+      if (!res.ok) {
+        this.logger.warn(`Cashfree order verify failed for ${orderId}: ${res.status} ${JSON.stringify(data)}`);
+        return { order_status: 'VERIFY_PENDING', cashfreeStatusCode: res.status, cashfreeError: data };
+      }
+      return data;
     } catch (err: any) {
       this.logger.error(`Cashfree fetch error: ${err.message}`);
       return null;
@@ -137,6 +155,10 @@ export class CashfreeService {
         },
       });
       const data: any = await res.json();
+      if (!res.ok) {
+        this.logger.warn(`Cashfree payments verify failed for ${orderId}: ${res.status} ${JSON.stringify(data)}`);
+        return [];
+      }
       return Array.isArray(data) ? data : [];
     } catch (err: any) {
       this.logger.error(`Cashfree payments fetch error: ${err.message}`);

@@ -142,8 +142,16 @@ export default function GymListingPage() {
       const db = parseFloat(b.distance || b.distanceKm || '999');
       return da - db;
     }
-    if (activeSort === 'price_asc') return (Number(applyPassCommission(positiveNumber(a.dayPassPrice || a.day_pass_price), passPricingConfig?.day_pass?.commission) || 999)) - (Number(applyPassCommission(positiveNumber(b.dayPassPrice || b.day_pass_price), passPricingConfig?.day_pass?.commission) || 999));
-    if (activeSort === 'price_desc') return (Number(applyPassCommission(positiveNumber(b.dayPassPrice || b.day_pass_price), passPricingConfig?.day_pass?.commission) || 0)) - (Number(applyPassCommission(positiveNumber(a.dayPassPrice || a.day_pass_price), passPricingConfig?.day_pass?.commission) || 0));
+    if (activeSort === 'price_asc') {
+      const ap = applyPassCommission(positiveNumber(a.dayPassPrice || a.day_pass_price) || positiveNumber(passPricingConfig?.day_pass?.basePrice), passPricingConfig?.day_pass?.commission);
+      const bp = applyPassCommission(positiveNumber(b.dayPassPrice || b.day_pass_price) || positiveNumber(passPricingConfig?.day_pass?.basePrice), passPricingConfig?.day_pass?.commission);
+      return Number(ap || 999) - Number(bp || 999);
+    }
+    if (activeSort === 'price_desc') {
+      const ap = applyPassCommission(positiveNumber(a.dayPassPrice || a.day_pass_price) || positiveNumber(passPricingConfig?.day_pass?.basePrice), passPricingConfig?.day_pass?.commission);
+      const bp = applyPassCommission(positiveNumber(b.dayPassPrice || b.day_pass_price) || positiveNumber(passPricingConfig?.day_pass?.basePrice), passPricingConfig?.day_pass?.commission);
+      return Number(bp || 0) - Number(ap || 0);
+    }
     return 0;
   });
 

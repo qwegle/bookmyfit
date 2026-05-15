@@ -10,7 +10,7 @@ import { UserEntity } from './user.entity';
  * Legacy values (individual/pro/max/elite) kept for DB backward-compat but not used in new code.
  */
 export type PlanType = 'day_pass' | 'same_gym' | 'multi_gym';
-export type SubscriptionStatus = 'active' | 'expired' | 'cancelled' | 'frozen';
+export type SubscriptionStatus = 'active' | 'pending' | 'expired' | 'cancelled' | 'frozen';
 
 @Entity('subscriptions')
 export class SubscriptionEntity {

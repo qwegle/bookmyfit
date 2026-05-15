@@ -66,7 +66,8 @@ export default function ReportsPage() {
     ]).then(([checkins, settlements, members]) => {
       // Build report data from available real data
       const todayCount = checkins?.count ?? checkins?.total ?? (Array.isArray(checkins) ? checkins.length : null);
-      const activeMembers = Array.isArray(members) ? members.filter((m: any) => m.status === 'active').length : null;
+      const memberRows = Array.isArray(members) ? members : members?.data ?? members?.members ?? [];
+      const activeMembers = Array.isArray(memberRows) ? memberRows.filter((m: any) => m.status === 'active').length : null;
       const history = Array.isArray(settlements?.history) ? settlements.history : [];
       const revenueShare = history.reduce((sum: number, s: any) => sum + (s.netPayout || 0), 0);
 
@@ -77,12 +78,12 @@ export default function ReportsPage() {
           peakHour: EMPTY_REPORT.peakHour,
           revenueShare: revenueShare || EMPTY_REPORT.revenueShare,
           dailyCheckins: EMPTY_REPORT.dailyCheckins,
-          topMembers: Array.isArray(members)
-            ? members.slice(0, 5).map((m: any, i: number) => ({
+          topMembers: Array.isArray(memberRows)
+            ? memberRows.slice(0, 5).map((m: any, i: number) => ({
                 id: m._id || m.id || String(i),
                 name: m.name || 'Unknown',
                 visits: m.totalVisits || 0,
-                plan: m.planType || 'Standard',
+                plan: m.planName || m.planType || 'Standard',
                 lastVisit: m.lastVisit || '',
               }))
             : EMPTY_REPORT.topMembers,
