@@ -59,7 +59,7 @@ export default function BookingsTab() {
         text: 'Yes, Cancel', style: 'destructive',
         onPress: async () => {
           try {
-            await api.post(`/sessions/cancel/${activeBooking.id}`, {});
+            await api.post(`/sessions/cancel/${activeBooking.bookingId || activeBooking.id}`, {});
             loadGymBooking();
             Alert.alert('Cancelled', 'Your booking has been cancelled.');
           } catch (err: any) {
@@ -128,6 +128,9 @@ export default function BookingsTab() {
                 expiresAt: activeBooking.expiresAt,
                 bookedAt: activeBooking.bookedAt,
                 gymName: activeBooking.gymName || '',
+                bookingId: activeBooking.bookingId || '',
+                bookingRef: activeBooking.bookingRef || '',
+                manualCode: activeBooking.manualCode || activeBooking.bookingRef || activeBooking.bookingId || '',
               }})}
             >
               <View style={s.activeTop}>

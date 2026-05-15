@@ -27,6 +27,7 @@ type Member = {
 const STATUS_FILTERS = [
   { key: 'all', label: 'All' },
   { key: 'active', label: 'Active' },
+  { key: 'pending', label: 'Pending' },
   { key: 'expired', label: 'Expired' },
   { key: 'cancelled', label: 'Deactivated' },
 ] as const;
@@ -121,7 +122,7 @@ export default function MembersPage() {
   const [limit, setLimit] = useState(20);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(1);
-  const [serverStats, setServerStats] = useState<{ total: number; active: number; expired: number; cancelled: number } | null>(null);
+  const [serverStats, setServerStats] = useState<{ total: number; active: number; pending?: number; expired: number; cancelled: number } | null>(null);
   const [confirm, setConfirm] = useState<{ id: string; name: string } | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -146,6 +147,7 @@ export default function MembersPage() {
       setServerStats(res?.stats ? {
         total: Number(res.stats.total ?? res.total ?? rows.length),
         active: Number(res.stats.active ?? 0),
+        pending: Number(res.stats.pending ?? 0),
         expired: Number(res.stats.expired ?? 0),
         cancelled: Number(res.stats.cancelled ?? 0),
       } : null);
@@ -193,6 +195,7 @@ export default function MembersPage() {
   const stats = serverStats || {
     total,
     active: members.filter(m => m.status === 'active').length,
+    pending: members.filter(m => m.status === 'pending').length,
     expired: members.filter(m => m.status === 'expired').length,
     cancelled: members.filter(m => m.status === 'cancelled').length,
   };
@@ -230,10 +233,11 @@ export default function MembersPage() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-5 gap-4 mb-8">
         {[
           { label: 'Total Members', value: total, icon: Users, color: 'var(--accent)' },
           { label: 'Active', value: stats.active, icon: UserCheck, color: '#22c55e' },
+          { label: 'Pending', value: stats.pending || 0, icon: Clock, color: '#64A0FF' },
           { label: 'Expired', value: stats.expired, icon: Clock, color: '#FFB400' },
           { label: 'Deactivated', value: stats.cancelled, icon: UserX, color: '#ef4444' },
         ].map((s) => {

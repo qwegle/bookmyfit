@@ -20,6 +20,7 @@ type ScanResult = {
   ok: boolean;
   userName?: string;
   planType?: string;
+  bookingRef?: string;
   message?: string;
   gymEarns?: number;
   adminEarns?: number;
@@ -146,6 +147,41 @@ export default function ScannerPage() {
     const payload = decodeJwtPayload(t);
     const memberId: string | undefined = payload?.sub;
 
+    if (!gymId) {
+      showResultAndResume({ ok: false, message: 'Gym profile is not loaded yet. Refresh and try again.' });
+      return;
+    }
+
+    if (!memberId) {
+      setValidating(true);
+      try {
+        const scanRes = await api.post<any>('/qr/validate-manual', { code: t, gymId });
+        const gymEarns = scanRes?.gymEarns != null
+          ? Number(scanRes.gymEarns)
+          : ratePerDay * (1 - commissionRate / 100);
+        const adminEarns = scanRes?.adminEarns != null
+          ? Number(scanRes.adminEarns)
+          : ratePerDay - gymEarns;
+        showResultAndResume({
+          ok: true,
+          userName: scanRes?.user?.name || (scanRes?.user?.id ? `Member ${String(scanRes.user.id).slice(0, 8)}` : 'Member'),
+          planType: scanRes?.planType || 'Manual Check-in',
+          bookingRef: scanRes?.bookingRef || undefined,
+          message: scanRes?.message || 'Manual check-in recorded!',
+          gymEarns,
+          adminEarns,
+        });
+      } catch (e: any) {
+        let msg = e?.message || 'Manual check-in failed';
+        try { msg = JSON.parse(msg)?.message || msg; } catch { /* */ }
+        showResultAndResume({ ok: false, message: msg });
+      } finally {
+        setValidating(false);
+        setQrToken('');
+      }
+      return;
+    }
+
     if (!memberId) {
       showResultAndResume({ ok: false, message: 'Invalid QR — could not read member ID. Ask member to regenerate.' });
       return;
@@ -172,6 +208,7 @@ export default function ScannerPage() {
           ok: true,
           userName: scanRes?.user?.name || (scanRes?.user?.id ? `Member ${String(scanRes.user.id).slice(0, 8)}` : 'Member'),
           planType: scanRes?.planType || 'QR Check-in',
+          bookingRef: scanRes?.bookingRef || undefined,
           message: scanRes?.message || 'Check-in recorded!',
           gymEarns,
           adminEarns,
@@ -185,7 +222,7 @@ export default function ScannerPage() {
       setValidating(false);
       setQrToken('');
     }
-  }, [gymId, qrToken, ratePerDay, showResultAndResume]);
+  }, [gymId, qrToken, ratePerDay, commissionRate, showResultAndResume]);
 
   const todaySuccess = attendance.filter(a => a.ok).length;
   const todayGymEarnings = attendance.filter(a => a.ok && a.gymEarns).reduce((s, a) => s + (a.gymEarns ?? 0), 0);
@@ -295,7 +332,7 @@ export default function ScannerPage() {
               <span style={{ fontWeight: 700, fontSize: 13 }}>{mode === 'camera' ? 'Or enter token manually' : 'Enter QR Token'}</span>
             </div>
             <textarea value={qrToken} onChange={e => setQrToken(e.target.value)}
-              placeholder="Paste QR token here…" className="glass-input w-full mb-3"
+              placeholder="Paste QR token, booking ref, or booking ID here..." className="glass-input w-full mb-3"
               style={{ minHeight: 72, fontFamily: 'monospace', fontSize: 12, resize: 'vertical' }} />
             <button onClick={() => validateToken()} disabled={validating || !qrToken.trim()} className="btn btn-primary w-full justify-center"
               style={{ opacity: validating || !qrToken.trim() ? 0.5 : 1 }}>
@@ -388,6 +425,7 @@ export default function ScannerPage() {
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--t3)' }}>
                       {a.planType && <span style={{ color: 'var(--accent)', marginRight: 5 }}>{a.planType}</span>}
+                      {a.bookingRef && <span style={{ color: 'var(--t2)', marginRight: 5 }}>#{a.bookingRef}</span>}
                       {!a.ok && <span style={{ color: '#FF3C3C' }}>{a.message}</span>}
                     </div>
                   </div>

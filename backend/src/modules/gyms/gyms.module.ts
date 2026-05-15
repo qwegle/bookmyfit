@@ -312,8 +312,9 @@ class GymsService {
     const [subs, total] = await qb.skip(skip).take(limit).getManyAndCount();
 
     const statsBase = applySearch(makeBaseQuery());
-    const [activeCount, expiredCount, cancelledCount] = await Promise.all([
+    const [activeCount, pendingCount, expiredCount, cancelledCount] = await Promise.all([
       statsBase.clone().andWhere('s.status = :status', { status: 'active' }).andWhere('s."endDate" >= CURRENT_DATE').getCount(),
+      statsBase.clone().andWhere('s.status = :status', { status: 'pending' }).getCount(),
       statsBase.clone().andWhere('s."endDate" < CURRENT_DATE').andWhere('s.status != :cancelled', { cancelled: 'cancelled' }).getCount(),
       statsBase.clone().andWhere('s.status = :status', { status: 'cancelled' }).getCount(),
     ]);
@@ -374,7 +375,7 @@ class GymsService {
       page,
       limit,
       pages: Math.ceil(total / limit),
-      stats: { total, active: activeCount, expired: expiredCount, cancelled: cancelledCount },
+      stats: { total, active: activeCount, pending: pendingCount, expired: expiredCount, cancelled: cancelledCount },
     };
   }
 

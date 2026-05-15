@@ -150,6 +150,9 @@ export default function SlotsScreen() {
             bookedAt: res.bookingQr.bookedAt,
             gymId: res.bookingQr.gymId,
             gymName: res.bookingQr.gymName,
+            bookingId: res.bookingQr.bookingId || res.id || '',
+            bookingRef: res.bookingQr.bookingRef || res.bookingRef || '',
+            manualCode: res.bookingQr.manualCode || res.bookingQr.bookingRef || res.bookingRef || res.id || '',
           },
         });
       } else {

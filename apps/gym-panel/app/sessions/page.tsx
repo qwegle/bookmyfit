@@ -23,6 +23,11 @@ type SessionSchedule = {
 
 type BookingRow = {
   id: string; slotDate: string; status: string; bookingRef: string;
+  manualCode?: string;
+  planName?: string;
+  planType?: string;
+  amountPaid?: number;
+  subscription?: { planName?: string; planType?: string; amountPaid?: number; status?: string };
   slot?: { startTime: string; endTime: string; date: string };
   sessionType?: { name: string; color: string };
   user?: { name: string; phone: string };
@@ -395,7 +400,7 @@ export default function SessionsPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                    {['Ref', 'Member', 'Session', 'Time', 'Status'].map((h) => (
+                    {['Manual ID', 'Member', 'Plan', 'Session', 'Time', 'Status', 'Paid'].map((h) => (
                       <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>{h}</th>
                     ))}
                   </tr>
@@ -403,19 +408,27 @@ export default function SessionsPage() {
                 <tbody>
                   {bookings.map((b) => (
                     <tr key={b.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                      <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: 'var(--accent)', letterSpacing: 1 }}>{b.bookingRef}</td>
+                      <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: 'var(--accent)', letterSpacing: 1 }}>#{b.manualCode || b.bookingRef || b.id}</td>
                       <td style={{ padding: '12px 16px', fontSize: 14, color: '#fff' }}>
-                        {b.user?.name ?? '—'}
+                        {b.user?.name ?? '-'}
                         {b.user?.phone && <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{b.user.phone}</div>}
+                      </td>
+                      <td style={{ padding: '12px 16px', fontSize: 13, color: 'rgba(255,255,255,0.75)' }}>
+                        {b.subscription?.planName || b.planName || b.planType || '-'}
                       </td>
                       <td style={{ padding: '12px 16px' }}>
                         {b.sessionType && <span style={pill(b.sessionType.color)}>{b.sessionType.name}</span>}
                       </td>
                       <td style={{ padding: '12px 16px', fontSize: 13, color: 'rgba(255,255,255,0.6)' }}>
-                        {b.slot ? `${b.slot.startTime} – ${b.slot.endTime}` : '—'}
+                        {b.slot ? `${b.slot.startTime} - ${b.slot.endTime}` : '-'}
                       </td>
                       <td style={{ padding: '12px 16px' }}>
                         <span style={pill(statusColor(b.status))}>{b.status.replace('_', ' ').toUpperCase()}</span>
+                      </td>
+                      <td style={{ padding: '12px 16px', fontSize: 13, color: 'rgba(255,255,255,0.75)', fontWeight: 700 }}>
+                        {Number(b.subscription?.amountPaid ?? b.amountPaid ?? 0) > 0
+                          ? `Rs ${Number(b.subscription?.amountPaid ?? b.amountPaid).toLocaleString('en-IN')}`
+                          : '-'}
                       </td>
                     </tr>
                   ))}

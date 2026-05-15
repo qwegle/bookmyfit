@@ -189,6 +189,8 @@ export const qrApi = {
     api.post('/qr/generate', { subscriptionId }),
   validate: (qrToken: string, gymId: string) =>
     api.post('/qr/validate', { qrToken, gymId }),
+  validateManual: (code: string, gymId: string) =>
+    api.post('/qr/validate-manual', { code, gymId }),
 };
 
 export const checkinApi = {

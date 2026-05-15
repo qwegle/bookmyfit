@@ -2,7 +2,7 @@ import { Module, Controller, Get, Post, Put, Delete, Body, UseGuards, Req, Injec
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/guards/roles.decorator';
 import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { paginate, paginatedResponse } from '../../common/pagination.helper';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { v4 as uuid } from 'uuid';
@@ -443,13 +443,67 @@ class SubscriptionsService {
       .addSelect('s.status', 'status')
       .addSelect('s."amountPaid"', 'amountPaid')
       .addSelect('s."gymIds"', 'gymIds')
+      .addSelect('s."gymPlanId"', 'gymPlanId')
+      .addSelect('s."razorpayOrderId"', 'cashfreeOrderId')
+      .addSelect('s."razorpayPaymentId"', 'cashfreePaymentId')
       .addSelect('s."createdAt"', 'createdAt')
-      .orderBy('s."createdAt"', 'DESC')
-      .skip(skip)
-      .take(take);
-    if (status) qb.andWhere('s.status = :status', { status });
+      .orderBy('s."createdAt"', 'DESC');
+    if (status === 'expired') {
+      qb.andWhere('s."endDate" < CURRENT_DATE').andWhere('s.status != :cancelled', { cancelled: 'cancelled' });
+    } else if (status === 'active') {
+      qb.andWhere('s.status = :status', { status }).andWhere('s."endDate" >= CURRENT_DATE');
+    } else if (status) {
+      qb.andWhere('s.status = :status', { status });
+    }
     if (gymId) qb.andWhere(':gymId = ANY(s."gymIds")', { gymId });
-    const [data, total] = await Promise.all([qb.getRawMany(), qb.getCount()]);
+    const [rows, total] = await Promise.all([
+      qb.clone().skip(skip).take(take).getRawMany(),
+      qb.clone().getCount(),
+    ]);
+
+    const userIds = [...new Set(rows.map((s: any) => s.userId).filter(Boolean))];
+    const allGymIds = [...new Set(rows.flatMap((s: any) => s.gymIds || []).filter(Boolean))];
+    const gymPlanIds = [...new Set(rows.map((s: any) => s.gymPlanId).filter(Boolean))];
+    const [users, gyms, gymPlans] = await Promise.all([
+      userIds.length ? this.userRepo.find({ where: { id: In(userIds) } }) : [],
+      allGymIds.length ? this.gymRepo.find({ where: { id: In(allGymIds) } }) : [],
+      gymPlanIds.length ? this.gymPlanRepo.find({ where: { id: In(gymPlanIds as string[]) } }) : [],
+    ]);
+    const userMap = new Map<string, UserEntity>(users.map((u): [string, UserEntity] => [u.id, u]));
+    const gymMap = new Map<string, any>(gyms.map((g): [string, any] => [g.id, this.normalizeGymSummary(g)]));
+    const planMap = new Map<string, GymPlanEntity>(gymPlans.map((plan): [string, GymPlanEntity] => [plan.id, plan]));
+    const planLabels: Record<string, string> = {
+      day_pass: '1-Day Pass',
+      same_gym: 'Same Gym Pass',
+      multi_gym: 'Multi Gym Pass',
+    };
+
+    const data = rows.map((sub: any) => {
+      const user = userMap.get(sub.userId);
+      const subGyms = (sub.gymIds || []).map((id: string) => gymMap.get(id)).filter(Boolean);
+      const plan = sub.gymPlanId ? planMap.get(sub.gymPlanId) : null;
+      const effectiveStatus = sub.status === 'active' && String(sub.endDate).slice(0, 10) < new Date().toISOString().slice(0, 10)
+        ? 'expired'
+        : sub.status;
+      return {
+        ...sub,
+        status: effectiveStatus,
+        amountPaid: Number(sub.amountPaid || 0),
+        user: user ? { id: user.id, name: user.name, phone: user.phone, email: user.email } : null,
+        userName: user?.name || user?.phone || user?.email || `User-${String(sub.userId).slice(0, 6)}`,
+        userPhone: user?.phone || null,
+        userEmail: user?.email || null,
+        gym: subGyms[0] || null,
+        gyms: subGyms.map((g: any) => ({ id: g.id, name: g.name, city: g.city, area: g.area })),
+        gymName: sub.planType === 'multi_gym'
+          ? 'All Partner Gyms'
+          : (subGyms[0]?.name || null),
+        plan: plan ? { id: plan.id, name: plan.name, price: Number(plan.price || 0), durationDays: plan.durationDays } : null,
+        planName: plan?.name || planLabels[sub.planType] || sub.planType,
+        accessType: sub.planType === 'multi_gym' ? 'Multi Gym' : 'Single Gym',
+        paymentStatus: effectiveStatus === 'active' ? 'paid' : effectiveStatus,
+      };
+    });
     return paginatedResponse(data, total, p, l);
   }
 
@@ -475,6 +529,15 @@ class SubscriptionsService {
       endDate: newEnd.toISOString().slice(0, 10),
     });
     return { success: true, message: 'Subscription reactivated. End date extended by 30 days.' };
+  }
+
+  async cancel(subscriptionId: string, actor: any) {
+    const sub = actor?.role === 'super_admin'
+      ? await this.repo.findOne({ where: { id: subscriptionId } })
+      : await this.repo.findOne({ where: { id: subscriptionId, userId: actor?.userId } });
+    if (!sub) throw new BadRequestException('Subscription not found');
+    await this.repo.update(subscriptionId, { status: 'cancelled' as any });
+    return { success: true, subscriptionId, status: 'cancelled' };
   }
 
   async listMultiGymNetwork() {
@@ -613,10 +676,7 @@ class SubscriptionsController {
   @ApiBearerAuth()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('super_admin', 'end_user')
-  async cancel(@Param('id') id: string, @Req() req: any) {
-    // Allow owner to cancel their own, or super_admin to cancel any
-    return this.svc.freeze(id, req.user.userId).then(() => ({ success: true, subscriptionId: id, status: 'cancelled' }));
-  }
+  cancel(@Param('id') id: string, @Req() req: any) { return this.svc.cancel(id, req.user); }
 
   @Get('admin/invoices')
   @ApiBearerAuth()

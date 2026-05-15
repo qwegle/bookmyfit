@@ -1,108 +1,60 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Shell from '../../components/Shell';
 import { api } from '../../lib/api';
-import { useToast } from '../../components/Toast';
-import { BookOpen, CheckCircle, Clock, XCircle, Eye, X, Download } from 'lucide-react';
+import { BookOpen, CheckCircle, Clock, Download, RefreshCw, XCircle } from 'lucide-react';
 import Pagination from '../../components/Pagination';
 
-type BookingStatus = 'active' | 'pending' | 'cancelled' | 'expired';
-
-interface Booking {
+type Booking = {
   id: string;
-  user: string;
-  gym: string;
-  planType: string;
-  amount: number;
-  status: BookingStatus;
-  createdAt: string;
-  startDate?: string;
-  endDate?: string;
+  manualCode?: string;
+  bookingRef?: string;
+  slotDate: string;
+  status: 'confirmed' | 'attended' | 'not_attended' | 'cancelled' | string;
+  bookedAt: string;
+  amountPaid?: number;
+  planName?: string;
+  planType?: string;
+  user?: { name?: string; phone?: string; email?: string };
+  gym?: { name?: string; city?: string; area?: string };
+  subscription?: { planName?: string; planType?: string; amountPaid?: number; status?: string };
+  sessionType?: { name?: string };
+  slot?: { startTime?: string; endTime?: string; date?: string };
+};
+
+const STATUSES = ['all', 'confirmed', 'attended', 'not_attended', 'cancelled'] as const;
+
+function statusStyle(status: string): React.CSSProperties {
+  if (status === 'attended') return { background: 'rgba(34,197,94,0.14)', color: '#22c55e' };
+  if (status === 'confirmed') return { background: 'rgba(255,180,0,0.14)', color: '#FFB400' };
+  if (status === 'cancelled' || status === 'not_attended') return { background: 'rgba(239,68,68,0.14)', color: '#ef4444' };
+  return { background: 'rgba(255,255,255,0.08)', color: 'var(--t2)' };
 }
 
-type FilterTab = 'all' | BookingStatus;
-
-function formatDate(d: string) {
-  if (!d) return '--';
-  return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
-function StatusBadge({ status }: { status: BookingStatus }) {
-  if (status === 'active') return <span className="badge-active">{status}</span>;
-  if (status === 'pending') return <span className="badge-pending">{status}</span>;
-  return <span className="badge-danger">{status}</span>;
-}
-
-function BookingDetailModal({ booking, onClose }: { booking: Booking; onClose: () => void }) {
-  return (
-    <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
-      onClick={onClose}
-    >
-      <div
-        style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 20, padding: 28, width: 460, maxWidth: '90vw' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-          <h3 style={{ fontFamily: 'var(--serif)', fontSize: 20, color: '#fff', margin: 0 }}>Booking Details</h3>
-          <button className="btn btn-ghost" style={{ padding: '4px 8px' }} onClick={onClose}><X size={16} /></button>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 24px' }}>
-          {[
-            { label: 'Booking ID', value: booking.id },
-            { label: 'Status', value: <StatusBadge status={booking.status} /> },
-            { label: 'User', value: booking.user },
-            { label: 'Gym', value: booking.gym },
-            { label: 'Plan Type', value: booking.planType },
-            { label: 'Amount', value: `₹${booking.amount.toLocaleString('en-IN')}` },
-            { label: 'Start Date', value: formatDate(booking.startDate ?? '') },
-            { label: 'End Date', value: formatDate(booking.endDate ?? '') },
-          ].map(({ label, value }) => (
-            <div key={label}>
-              <div className="kicker" style={{ marginBottom: 4 }}>{label}</div>
-              <div style={{ fontSize: 14, color: 'var(--t)', fontWeight: 500 }}>{value}</div>
-            </div>
-          ))}
-        </div>
-        <div style={{ marginTop: 24 }}>
-          <button className="btn btn-ghost" style={{ width: '100%' }} onClick={onClose}>Close</button>
-        </div>
-      </div>
-    </div>
-  );
+function fmtDate(value?: string) {
+  if (!value) return '-';
+  return new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 export default function BookingsPage() {
-  const { toast } = useToast();
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<FilterTab>('all');
+  const [status, setStatus] = useState<string>('all');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(1);
-  const [viewBooking, setViewBooking] = useState<Booking | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get<any>(`/subscriptions/all?page=${page}&limit=${limit}`);
-      const arr = Array.isArray(res) ? res : (res as any)?.data ?? [];
-      const mapped: Booking[] = arr.map((s: any) => ({
-        id: s.id ?? '--',
-        user: s.user?.name ?? s.user?.email ?? '--',
-        gym: s.gym?.name ?? '--',
-        planType: s.plan?.name ?? s.planType ?? '--',
-        amount: s.amount ?? 0,
-        status: s.status ?? 'pending',
-        createdAt: s.createdAt ?? '',
-        startDate: s.startDate ?? s.createdAt ?? '',
-        endDate: s.endDate ?? s.expiresAt ?? '',
-      }));
-      setBookings(mapped);
-      setTotal((res as any)?.total ?? mapped.length);
-      setPages((res as any)?.pages ?? 1);
+      const statusQuery = status !== 'all' ? `&status=${status}` : '';
+      const res: any = await api.get(`/sessions/admin/bookings?page=${page}&limit=${limit}${statusQuery}`);
+      const rows = Array.isArray(res) ? res : res?.data ?? [];
+      setBookings(rows);
+      setTotal(res?.total ?? rows.length);
+      setPages(res?.pages ?? 1);
     } catch {
       setBookings([]);
       setTotal(0);
@@ -110,170 +62,130 @@ export default function BookingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, limit]);
+  }, [page, limit, status]);
 
   useEffect(() => { load(); }, [load]);
-
-  const handleCancel = async (id: string) => {
-    if (!confirm('Cancel this booking?')) return;
-    try {
-      await api.post(`/subscriptions/${id}/cancel`);
-      toast('Booking cancelled');
-      load();
-    } catch (e: any) {
-      toast(e.message || 'Failed to cancel booking', 'error');
-    }
-  };
+  useEffect(() => { setPage(1); }, [status]);
 
   const exportCSV = () => {
-    const rows = [['ID','User','Gym','Plan','Amount','Status','Date']];
-    filtered.forEach((b) => rows.push([b.id, b.user, b.gym, b.planType, String(b.amount), b.status, b.createdAt]));
-    const csv = rows.map((r) => r.join(',')).join('\n');
+    const rows = [['Manual ID','User','Gym','Plan','Session','Date','Time','Status','Amount']];
+    bookings.forEach((b) => rows.push([
+      b.manualCode || b.bookingRef || b.id,
+      b.user?.name || b.user?.phone || '',
+      b.gym?.name || '',
+      b.subscription?.planName || b.planName || b.planType || '',
+      b.sessionType?.name || '',
+      b.slotDate || '',
+      b.slot ? `${b.slot.startTime || ''}-${b.slot.endTime || ''}` : '',
+      b.status,
+      String(b.subscription?.amountPaid ?? b.amountPaid ?? 0),
+    ]));
+    const csv = rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a'); a.href = url; a.download = 'bookings.csv'; a.click();
+    const a = document.createElement('a'); a.href = url; a.download = 'gym-bookings.csv'; a.click();
     URL.revokeObjectURL(url);
-    toast('CSV exported');
   };
 
-  const tabs: FilterTab[] = ['all', 'active', 'pending', 'cancelled', 'expired'];
-  const filtered = filter === 'all' ? bookings : bookings.filter(b => b.status === filter);
-
-  const activeCount = bookings.filter(b => b.status === 'active').length;
-  const pendingCount = bookings.filter(b => b.status === 'pending').length;
-  const cancelledCount = bookings.filter(b => b.status === 'cancelled' || b.status === 'expired').length;
+  const counts = {
+    confirmed: bookings.filter((b) => b.status === 'confirmed').length,
+    attended: bookings.filter((b) => b.status === 'attended').length,
+    missed: bookings.filter((b) => b.status === 'not_attended').length,
+  };
 
   return (
-    <Shell title="Bookings">
-      <div style={{ padding: '2rem', maxWidth: 1200 }}>
-        <div style={{ marginBottom: '1.75rem', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-          <div>
-            <p className="kicker">Admin</p>
-            <h1 className="serif" style={{ fontSize: '2rem', color: 'var(--t)', margin: 0 }}>Bookings</h1>
-          </div>
-          <button className="btn btn-ghost flex items-center gap-2" onClick={exportCSV} disabled={loading}>
-            <Download size={14} /> Export CSV
-          </button>
-        </div>
+    <Shell title="Gym Booking Tracker">
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        {[
+          { label: 'Total Bookings', value: loading ? '-' : String(total), icon: BookOpen },
+          { label: 'Confirmed', value: loading ? '-' : String(counts.confirmed), icon: Clock },
+          { label: 'Checked In', value: loading ? '-' : String(counts.attended), icon: CheckCircle },
+          { label: 'Missed', value: loading ? '-' : String(counts.missed), icon: XCircle },
+        ].map((item) => {
+          const Icon = item.icon;
+          return (
+            <div key={item.label} className="card stat-glow p-5">
+              <div className="flex items-center gap-3 mb-2">
+                <Icon size={16} style={{ color: 'var(--accent)' }} />
+                <span className="text-xs font-semibold" style={{ color: 'var(--t2)' }}>{item.label}</span>
+              </div>
+              <div className="text-2xl font-bold">{item.value}</div>
+            </div>
+          );
+        })}
+      </div>
 
-        {/* Stats */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.75rem' }}>
-          {loading ? Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="animate-pulse h-8 rounded" style={{ background: 'var(--surface)', height: 90 }} />
-          )) : (
-            <>
-              <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <BookOpen size={22} color="var(--t2)" />
-                <div>
-                  <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Bookings</p>
-                  <p className="stat-glow" style={{ margin: 0, fontSize: '1.6rem', fontWeight: 700 }}>{total}</p>
-                </div>
-              </div>
-              <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <CheckCircle size={22} color="var(--accent)" />
-                <div>
-                  <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Active</p>
-                  <p style={{ margin: 0, fontSize: '1.6rem', fontWeight: 700, color: 'var(--accent)' }}>{activeCount}</p>
-                </div>
-              </div>
-              <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <Clock size={22} color="#F59E0B" />
-                <div>
-                  <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Pending</p>
-                  <p style={{ margin: 0, fontSize: '1.6rem', fontWeight: 700, color: '#F59E0B' }}>{pendingCount}</p>
-                </div>
-              </div>
-              <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <XCircle size={22} color="var(--error)" />
-                <div>
-                  <p style={{ margin: 0, fontSize: '0.72rem', color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Cancelled</p>
-                  <p style={{ margin: 0, fontSize: '1.6rem', fontWeight: 700, color: 'var(--error)' }}>{cancelledCount}</p>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Filter tabs */}
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
-          {tabs.map(tab => (
+      <div className="flex items-center gap-3 mb-5 flex-wrap">
+        <button onClick={load} className="btn btn-ghost flex items-center gap-2"><RefreshCw size={14} /> Refresh</button>
+        <button onClick={exportCSV} className="btn btn-ghost flex items-center gap-2"><Download size={14} /> Export CSV</button>
+        <div className="flex gap-2 flex-wrap">
+          {STATUSES.map((item) => (
             <button
-              key={tab}
-              onClick={() => { setFilter(tab); setPage(1); }}
+              key={item}
+              onClick={() => setStatus(item)}
+              className="btn text-xs"
               style={{
-                padding: '0.35rem 1rem',
-                borderRadius: 999,
-                fontSize: '0.8rem',
-                fontWeight: 500,
-                border: '1px solid var(--border)',
-                cursor: 'pointer',
+                background: status === item ? 'var(--accent)' : 'var(--glass-bg)',
+                color: status === item ? '#000' : 'var(--t)',
+                border: `1px solid ${status === item ? 'transparent' : 'var(--border-strong)'}`,
+                padding: '6px 14px',
                 textTransform: 'capitalize',
-                background: filter === tab ? 'var(--accent)' : 'transparent',
-                color: filter === tab ? '#000' : 'var(--t2)',
-                transition: 'all 0.15s',
               }}
             >
-              {tab}
+              {item.replace('_', ' ')}
             </button>
           ))}
         </div>
-
-        {/* Table */}
-        <div className="glass" style={{ borderRadius: 12, overflow: 'hidden' }}>
-          {loading ? (
-            <div style={{ padding: '2rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="animate-pulse" style={{ height: 40, borderRadius: 6, background: 'var(--surface)' }} />
-              ))}
-            </div>
-          ) : (
-            <table className="glass-table" style={{ width: '100%' }}>
-              <thead>
-                <tr>
-                  {['ID', 'User', 'Gym', 'Plan Type', 'Amount', 'Status', 'Date', 'Actions'].map(col => (
-                    <th key={col} style={{ padding: '0.85rem 1rem', textAlign: 'left', fontSize: '0.72rem', color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--border)' }}>{col}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((b, i) => (
-                  <tr key={b.id} style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                    <td style={{ padding: '0.85rem 1rem', fontSize: '0.82rem', color: 'var(--t3)', fontFamily: 'monospace' }}>{b.id}</td>
-                    <td style={{ padding: '0.85rem 1rem', fontSize: '0.88rem', color: 'var(--t)' }}>{b.user || '--'}</td>
-                    <td style={{ padding: '0.85rem 1rem', fontSize: '0.88rem', color: 'var(--t2)' }}>{b.gym || '--'}</td>
-                    <td style={{ padding: '0.85rem 1rem', fontSize: '0.88rem', color: 'var(--t2)' }}>{b.planType || '--'}</td>
-                    <td style={{ padding: '0.85rem 1rem', fontSize: '0.88rem', color: 'var(--t)', fontWeight: 600 }}>&#8377;{b.amount.toLocaleString('en-IN')}</td>
-                    <td style={{ padding: '0.85rem 1rem' }}><StatusBadge status={b.status} /></td>
-                    <td style={{ padding: '0.85rem 1rem', fontSize: '0.82rem', color: 'var(--t3)' }}>{formatDate(b.createdAt)}</td>
-                    <td style={{ padding: '0.85rem 1rem' }}>
-                      <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
-                        <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem', display: 'flex', alignItems: 'center', gap: 4 }} onClick={() => setViewBooking(b)}>
-                          <Eye size={12} /> View
-                        </button>
-                        {b.status === 'active' && (
-                          <button className="btn-ghost" style={{ fontSize: '0.72rem', padding: '0.25rem 0.6rem', color: 'var(--error)', borderColor: 'var(--error)', display: 'flex', alignItems: 'center', gap: 4 }} onClick={() => handleCancel(b.id)}>
-                            <X size={12} /> Cancel
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && (
-                  <tr>
-                    <td colSpan={8} style={{ padding: '2rem', textAlign: 'center', color: 'var(--t3)', fontSize: '0.88rem' }}>No bookings found</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          )}
-        </div>
-        <Pagination page={page} pages={pages} total={total} limit={limit} onPage={setPage} onLimit={(l) => { setLimit(l); setPage(1); }} />
       </div>
 
-      {viewBooking && (
-        <BookingDetailModal booking={viewBooking} onClose={() => setViewBooking(null)} />
-      )}
+      <div className="glass overflow-hidden">
+        <table className="glass-table">
+          <thead>
+            <tr>
+              <th>Manual ID</th>
+              <th>User</th>
+              <th>Gym</th>
+              <th>Plan</th>
+              <th>Session</th>
+              <th>Date / Time</th>
+              <th>Status</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--t2)', padding: 40 }}>Loading bookings...</td></tr>
+            ) : bookings.length === 0 ? (
+              <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--t2)', padding: 40 }}>No gym bookings found</td></tr>
+            ) : bookings.map((b) => (
+              <tr key={b.id}>
+                <td style={{ color: 'var(--accent)', fontFamily: 'monospace', fontWeight: 800 }}>#{b.manualCode || b.bookingRef || b.id}</td>
+                <td>
+                  <div style={{ fontWeight: 700, color: '#fff', fontSize: 13 }}>{b.user?.name || b.user?.phone || 'Member'}</div>
+                  <div style={{ color: 'var(--t2)', fontSize: 11 }}>{b.user?.phone || b.user?.email || '-'}</div>
+                </td>
+                <td style={{ color: 'var(--t)' }}>{b.gym?.name || '-'}</td>
+                <td>
+                  <div style={{ color: 'var(--t)' }}>{b.subscription?.planName || b.planName || b.planType || '-'}</div>
+                  <div style={{ color: 'var(--t3)', fontSize: 11 }}>{b.subscription?.status || ''}</div>
+                </td>
+                <td style={{ color: 'var(--t2)' }}>{b.sessionType?.name || 'Gym Workout'}</td>
+                <td>
+                  <div style={{ color: 'var(--t)' }}>{fmtDate(b.slotDate)}</div>
+                  <div style={{ color: 'var(--t3)', fontSize: 11 }}>{b.slot ? `${b.slot.startTime || ''} - ${b.slot.endTime || ''}` : '-'}</div>
+                </td>
+                <td>
+                  <span style={{ ...statusStyle(b.status), padding: '3px 10px', borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
+                    {b.status.replace('_', ' ')}
+                  </span>
+                </td>
+                <td style={{ color: '#fff', fontWeight: 800 }}>Rs {Number(b.subscription?.amountPaid ?? b.amountPaid ?? 0).toLocaleString('en-IN')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Pagination page={page} pages={pages} total={total} limit={limit} onPage={setPage} onLimit={(next) => { setLimit(next); setPage(1); }} />
     </Shell>
   );
 }

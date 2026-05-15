@@ -34,6 +34,7 @@ type ValidationResult = {
   success: boolean;
   memberName?: string;
   planType?: string;
+  bookingRef?: string;
   checkinTime?: string;
   errorMessage?: string;
   reason?: string;
@@ -68,13 +69,43 @@ export default function ScanScreen() {
     }, [startPulse])
   );
 
-  const handleValidate = async () => {
-    const trimmed = token.trim();
+  const handleValidate = async (tokenOverride?: string) => {
+    const trimmed = (tokenOverride ?? token).trim();
     if (!trimmed) return;
 
     // Decode the QR JWT to extract the member's userId
     const payload = decodeJwtPayload(trimmed);
     const memberId: string | undefined = payload?.sub;
+
+    if (!gymId) {
+      setResult({ success: false, errorMessage: 'Gym profile is not loaded yet.', reason: 'Refresh this screen and try again.' });
+      return;
+    }
+
+    if (!memberId) {
+      setLoading(true);
+      setResult(null);
+      try {
+        const data = await qrApi.validateManual(trimmed, gymId);
+        setResult({
+          success: true,
+          memberName: data.user?.name ?? (data.user?.id ? `Member ${String(data.user.id).slice(0, 8)}` : 'Member'),
+          planType: data.planType ?? 'Manual Check-in',
+          bookingRef: data.bookingRef,
+          checkinTime: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+        });
+        setTimeout(() => { setToken(''); setResult(null); }, 5000);
+      } catch (err: any) {
+        setResult({
+          success: false,
+          errorMessage: err?.message ?? 'Manual check-in failed.',
+          reason: err?.reason ?? 'Booking ref may be invalid or outside the booked slot time.',
+        });
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
 
     if (!memberId) {
       setResult({ success: false, errorMessage: 'Invalid QR code — could not read member ID.', reason: 'Token is not a valid BMF QR.' });
@@ -102,6 +133,7 @@ export default function ScanScreen() {
           success: true,
           memberName: data.user?.name ?? (data.user?.id ? `Member ${String(data.user.id).slice(0, 8)}` : 'Member'),
           planType: data.planType ?? 'QR Check-in',
+          bookingRef: data.bookingRef,
           checkinTime: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
         });
         // Auto reset after 5 seconds so next person can scan
@@ -141,10 +173,7 @@ export default function ScanScreen() {
     setScanned(true);
     setCameraActive(false);
     setToken(data);
-    // Auto-validate after a brief moment
-    setTimeout(() => {
-      setToken(data);
-    }, 100);
+    handleValidate(data);
   };
 
   return (
@@ -195,13 +224,13 @@ export default function ScanScreen() {
             style={s.input}
             value={token}
             onChangeText={setToken}
-            placeholder="Paste or scan QR token here"
+            placeholder="Paste QR token, booking ref, or booking ID"
             placeholderTextColor={colors.t3}
             multiline={false}
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="done"
-            onSubmitEditing={handleValidate}
+            onSubmitEditing={() => handleValidate()}
           />
         </View>
 
@@ -209,7 +238,7 @@ export default function ScanScreen() {
         {!result && (
           <TouchableOpacity
             style={[s.validateBtn, (!token.trim() || loading) && s.validateBtnDisabled]}
-            onPress={handleValidate}
+            onPress={() => handleValidate()}
             disabled={!token.trim() || loading}
             activeOpacity={0.85}
           >
@@ -246,6 +275,15 @@ export default function ScanScreen() {
                   <Text style={s.resultLabel}>Plan</Text>
                   <Text style={s.resultValue}>{result.planType}</Text>
                 </View>
+                {result.bookingRef && (
+                  <>
+                    <View style={s.resultDivider} />
+                    <View style={s.resultRow}>
+                      <Text style={s.resultLabel}>Manual ID</Text>
+                      <Text style={s.resultValue}>#{result.bookingRef}</Text>
+                    </View>
+                  </>
+                )}
                 <View style={s.resultDivider} />
                 <View style={s.resultRow}>
                   <Text style={s.resultLabel}>Check-in Time</Text>

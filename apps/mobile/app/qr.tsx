@@ -29,6 +29,7 @@ type QrMode = 'loading' | 'slot' | 'empty';
 export default function QrScreen() {
   const params = useLocalSearchParams<{
     token?: string; expiresAt?: string; gymId?: string; gymName?: string; bookedAt?: string;
+    bookingId?: string; bookingRef?: string; manualCode?: string;
   }>();
 
   const [mode, setMode] = useState<QrMode>('loading');
@@ -36,6 +37,7 @@ export default function QrScreen() {
   const [expiresAt, setExpiresAt] = useState<string | null>(params.expiresAt || null);
   const [bookedAt, setBookedAt] = useState<string | null>(params.bookedAt || null);
   const [gymName, setGymName] = useState<string>(params.gymName || '');
+  const [manualCode, setManualCode] = useState<string>(params.manualCode || params.bookingRef || params.bookingId || '');
   const [secondsLeft, setSecondsLeft] = useState(0);
 
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -55,6 +57,7 @@ export default function QrScreen() {
           setExpiresAt(booking.bookingQr.expiresAt);
           setBookedAt(booking.bookingQr.bookedAt);
           setGymName(booking.bookingQr.gymName || '');
+          setManualCode(booking.bookingQr.manualCode || booking.bookingQr.bookingRef || booking.bookingQr.bookingId || '');
           setMode('slot');
           return;
         }
@@ -162,6 +165,14 @@ export default function QrScreen() {
             </Text>
           )}
 
+          {manualCode ? (
+            <View style={s.manualBox}>
+              <Text style={s.manualLabel}>Manual Check-in ID</Text>
+              <Text selectable style={s.manualCode}>#{manualCode}</Text>
+              <Text style={s.manualHint}>Use this if the QR scan fails.</Text>
+            </View>
+          ) : null}
+
           {/* QR code */}
           <View style={[s.qrBox, isExpired && { opacity: 0.5 }]}>
             {isExpired && (
@@ -250,6 +261,20 @@ const s = StyleSheet.create({
     fontFamily: fonts.sans, fontSize: 12, color: colors.t2,
     marginBottom: 20, textAlign: 'center',
   },
+  manualBox: {
+    width: '100%',
+    backgroundColor: 'rgba(204,255,0,0.08)',
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+    borderRadius: radius.lg,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  manualLabel: { fontFamily: fonts.sansBold, fontSize: 10, letterSpacing: 1.2, color: colors.t2, textTransform: 'uppercase' },
+  manualCode: { fontFamily: fonts.sansBold, fontSize: 22, letterSpacing: 2, color: colors.accent, marginTop: 3 },
+  manualHint: { fontFamily: fonts.sans, fontSize: 11, color: colors.t2, marginTop: 3 },
   qrBox: {
     backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 24,
     padding: 24, borderWidth: 1, borderColor: colors.borderGlass,

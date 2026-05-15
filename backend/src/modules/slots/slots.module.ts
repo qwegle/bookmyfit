@@ -154,6 +154,8 @@ class SlotsService {
         bookedAt: bookedAt.toISOString(),
         gymId: slot.gymId,
         gymName: gym?.name ?? '',
+        bookingId: booking.id,
+        manualCode: booking.id,
       },
     };
   }
@@ -191,6 +193,9 @@ class SlotsService {
     const active = qrs.find(q => new Date(q.expiresAt) > now);
     if (!active) return { active: false };
     const gym = await this.gymRepo.findOne({ where: { id: active.gymId } });
+    const booking = active.slotBookingId
+      ? await this.bookingRepo.findOne({ where: { id: active.slotBookingId } })
+      : null;
     return {
       active: true,
       bookingQr: {
@@ -200,6 +205,9 @@ class SlotsService {
         bookedAt: active.bookedAt ? active.bookedAt.toISOString() : active.createdAt.toISOString(),
         gymId: active.gymId,
         gymName: gym?.name ?? '',
+        bookingId: active.slotBookingId,
+        bookingRef: (booking as any)?.bookingRef || null,
+        manualCode: (booking as any)?.bookingRef || active.slotBookingId,
       },
     };
   }

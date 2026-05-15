@@ -1,11 +1,13 @@
 import { Module, Controller, Get, Post, Put, Body, UseGuards, Req, Query, Param, BadRequestException } from '@nestjs/common';
 import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { paginate, paginatedResponse } from '../../common/pagination.helper';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { Injectable } from '@nestjs/common';
 import { UserEntity, UserRole } from '../../database/entities/user.entity';
+import { SubscriptionEntity } from '../../database/entities/subscription.entity';
+import { GymEntity } from '../../database/entities/gym.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/guards/roles.decorator';
@@ -25,7 +27,11 @@ const USER_ROLES: UserRole[] = ['super_admin', 'gym_owner', 'gym_staff', 'corpor
 
 @Injectable()
 class UsersService {
-  constructor(@InjectRepository(UserEntity) private readonly repo: Repository<UserEntity>) {}
+  constructor(
+    @InjectRepository(UserEntity) private readonly repo: Repository<UserEntity>,
+    @InjectRepository(SubscriptionEntity) private readonly subs: Repository<SubscriptionEntity>,
+    @InjectRepository(GymEntity) private readonly gyms: Repository<GymEntity>,
+  ) {}
 
   me(id: string) { return this.repo.findOne({ where: { id } }); }
   async list(page: any = 1, limit: any = 20, search?: string, role?: UserRole) {
@@ -37,7 +43,47 @@ class UsersService {
     }
     if (search) qb.andWhere('(u.name ILIKE :s OR u.phone ILIKE :s OR u.email ILIKE :s)', { s: `%${search}%` });
     const [data, total] = await qb.getManyAndCount();
-    return paginatedResponse(data, total, p, l);
+    const userIds = data.map((u) => u.id);
+    const subs = userIds.length
+      ? await this.subs.createQueryBuilder('s')
+        .where('s."userId" IN (:...userIds)', { userIds })
+        .orderBy('s."createdAt"', 'DESC')
+        .getMany()
+      : [];
+    const gymIds = [...new Set(subs.flatMap((s) => s.gymIds || []).filter(Boolean))];
+    const gyms = gymIds.length ? await this.gyms.find({ where: { id: In(gymIds) } }) : [];
+    const gymMap = new Map(gyms.map((g) => [g.id, g]));
+    const nowDate = new Date().toISOString().slice(0, 10);
+    const planLabels: Record<string, string> = {
+      day_pass: '1-Day Pass',
+      same_gym: 'Same Gym Pass',
+      multi_gym: 'Multi Gym Pass',
+    };
+    const enriched = data.map((user) => {
+      const userSubs = subs.filter((s) => s.userId === user.id);
+      const current = userSubs.find((s) => s.status === 'active' && String(s.endDate).slice(0, 10) >= nowDate) || userSubs[0] || null;
+      const currentGymId = current?.gymIds?.[0];
+      const currentGym = currentGymId ? gymMap.get(currentGymId) : null;
+      const subscriptionStatus = current
+        ? (current.status === 'active' && String(current.endDate).slice(0, 10) < nowDate ? 'expired' : current.status)
+        : 'none';
+      return {
+        ...user,
+        subscriptionStatus,
+        currentSubscription: current ? {
+          id: current.id,
+          planType: current.planType,
+          planName: planLabels[current.planType] || current.planType,
+          gymId: currentGym?.id || null,
+          gymName: current.planType === 'multi_gym' ? 'All Partner Gyms' : (currentGym?.name || null),
+          status: subscriptionStatus,
+          amountPaid: Number(current.amountPaid || 0),
+          startDate: current.startDate,
+          endDate: current.endDate,
+        } : null,
+      };
+    });
+    return paginatedResponse(enriched, total, p, l);
   }
 
   async createAdmin(data: { name?: string; email?: string; password?: string }) {
@@ -165,7 +211,7 @@ class UsersController {
 }
 
 @Module({
-  imports: [TypeOrmModule.forFeature([UserEntity])],
+  imports: [TypeOrmModule.forFeature([UserEntity, SubscriptionEntity, GymEntity])],
   controllers: [UsersController],
   providers: [UsersService],
   exports: [UsersService],

@@ -27,6 +27,7 @@ import { EmailService } from '../email/email.service';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { BookingQrEntity } from '../../database/entities/booking-qr.entity';
 import { v4 as uuidv4 } from 'uuid';
+import { paginate, paginatedResponse } from '../../common/pagination.helper';
 
 // ─── DTOs ────────────────────────────────────────────────────────────────────
 
@@ -131,6 +132,16 @@ function dayOfWeekFromDate(dateStr: string): number {
 }
 
 // ─── Service ─────────────────────────────────────────────────────────────────
+
+function dateTimeInIST(dateStr: string, timeStr: string): Date {
+  return new Date(`${dateStr}T${timeStr}:00+05:30`);
+}
+
+function bookingQrExpiryForSlot(slot: { date: string; endTime: string }) {
+  const expiresAt = dateTimeInIST(slot.date, slot.endTime);
+  expiresAt.setMinutes(expiresAt.getMinutes() + 30);
+  return expiresAt;
+}
 
 @Injectable()
 export class SessionsService {
@@ -547,11 +558,10 @@ export class SessionsService {
 
     this.sendBookingConfirmation({ booking, slot, sessionType, gym, user }).catch(() => {});
 
-    // Generate 2-hour booking QR
-    const BOOKING_QR_EXPIRY_HOURS = 2;
     const jti = uuidv4();
     const bookedAt = new Date();
-    const expiresAt = new Date(bookedAt.getTime() + BOOKING_QR_EXPIRY_HOURS * 60 * 60 * 1000);
+    const expiresAt = bookingQrExpiryForSlot(slot);
+    const expiresInSeconds = Math.max(60, Math.ceil((expiresAt.getTime() - Date.now()) / 1000));
 
     const qrPayload = {
       sub: userId,
@@ -561,7 +571,7 @@ export class SessionsService {
       jti,
       type: 'booking',
     };
-    const qrToken = this.jwt.sign(qrPayload, { expiresIn: `${BOOKING_QR_EXPIRY_HOURS}h` });
+    const qrToken = this.jwt.sign(qrPayload, { expiresIn: `${expiresInSeconds}s` });
 
     const bookingQr = await this.qrRepo.save(
       this.qrRepo.create({
@@ -587,6 +597,9 @@ export class SessionsService {
         bookedAt: bookedAt.toISOString(),
         gymId: slot.gymId,
         gymName: gym?.name ?? '',
+        bookingId: booking.id,
+        bookingRef: booking.bookingRef,
+        manualCode: booking.bookingRef || booking.id,
       },
     } as any;
   }
@@ -641,6 +654,12 @@ export class SessionsService {
     if (booking.status !== 'confirmed') throw new BadRequestException('Cannot cancel this booking');
     booking.status = 'cancelled';
     await this.bookingRepo.save(booking);
+    await this.qrRepo.createQueryBuilder()
+      .update(BookingQrEntity)
+      .set({ usedAt: new Date() })
+      .where('"slotBookingId" = :bookingId', { bookingId: booking.id })
+      .andWhere('"usedAt" IS NULL')
+      .execute();
     const slot = await this.slotRepo.findOne({ where: { id: booking.slotId } });
     if (slot && slot.bookedCount > 0) {
       slot.bookedCount -= 1;
@@ -856,23 +875,75 @@ export class SessionsService {
     return gym.id;
   }
 
+  private async enrichBookings(bookings: SessionBookingEntity[]) {
+    if (bookings.length === 0) return [];
+    const slotIds = bookings.map((b) => b.slotId);
+    const userIds = [...new Set(bookings.map((b) => b.userId))];
+    const gymIds = [...new Set(bookings.map((b) => b.gymId))];
+    const subIds = [...new Set(bookings.map((b) => b.subscriptionId).filter(Boolean))];
+    const bookingIds = bookings.map((b) => b.id);
+    const slots = await this.slotRepo.createQueryBuilder('s').whereInIds(slotIds).getMany();
+    const typeIds = [...new Set(slots.map((s) => s.sessionTypeId))];
+    const [users, gyms, types, subs, qrs] = await Promise.all([
+      userIds.length ? this.userRepo.createQueryBuilder('u').whereInIds(userIds).getMany() : [],
+      gymIds.length ? this.gymRepo.createQueryBuilder('g').whereInIds(gymIds).getMany() : [],
+      typeIds.length ? this.typeRepo.createQueryBuilder('t').whereInIds(typeIds).getMany() : [],
+      subIds.length ? this.subRepo.createQueryBuilder('sub').whereInIds(subIds).getMany() : [],
+      bookingIds.length ? this.qrRepo.createQueryBuilder('q').where('q."slotBookingId" IN (:...bookingIds)', { bookingIds }).getMany() : [],
+    ]);
+    const planLabels: Record<string, string> = {
+      day_pass: '1-Day Pass',
+      same_gym: 'Same Gym Pass',
+      multi_gym: 'Multi Gym Pass',
+    };
+    return bookings.map((b) => {
+      const slot = slots.find((s) => s.id === b.slotId);
+      const sub = subs.find((s) => s.id === b.subscriptionId);
+      const qr = qrs.find((q) => q.slotBookingId === b.id);
+      return {
+        ...b,
+        slot,
+        sessionType: slot ? types.find((t) => t.id === slot.sessionTypeId) : null,
+        user: users.find((u) => u.id === b.userId),
+        gym: gyms.find((g) => g.id === b.gymId),
+        subscription: sub ? {
+          id: sub.id,
+          planType: sub.planType,
+          planName: planLabels[sub.planType] || sub.planType,
+          status: sub.status,
+          amountPaid: Number(sub.amountPaid || 0),
+          startDate: sub.startDate,
+          endDate: sub.endDate,
+        } : null,
+        planType: sub?.planType || null,
+        planName: sub ? (planLabels[sub.planType] || sub.planType) : null,
+        amountPaid: Number(sub?.amountPaid || 0),
+        bookingQrId: qr?.id || null,
+        bookingQrUsedAt: qr?.usedAt || null,
+        bookingQrExpiresAt: qr?.expiresAt || null,
+        manualCode: b.bookingRef || b.id,
+      };
+    });
+  }
+
   async getBookingsForGym(gymId: string, date?: string) {
     const qb = this.bookingRepo.createQueryBuilder('b').where('b."gymId" = :gymId', { gymId });
     if (date) qb.andWhere('b."slotDate" = :date', { date });
     const bookings = await qb.orderBy('b."bookedAt"', 'DESC').take(100).getMany();
-    if (bookings.length === 0) return [];
-    const slotIds = bookings.map((b) => b.slotId);
-    const userIds = [...new Set(bookings.map((b) => b.userId))];
-    const slots = await this.slotRepo.createQueryBuilder('s').whereInIds(slotIds).getMany();
-    const typeIds = [...new Set(slots.map((s) => s.sessionTypeId))];
-    const [users, types] = await Promise.all([
-      userIds.length ? this.userRepo.createQueryBuilder('u').whereInIds(userIds).getMany() : [],
-      typeIds.length ? this.typeRepo.createQueryBuilder('t').whereInIds(typeIds).getMany() : [],
+    return this.enrichBookings(bookings);
+  }
+
+  async listBookingsAdmin(page: any = 1, limit: any = 20, status?: string, gymId?: string) {
+    const { skip, take, page: p, limit: l } = paginate(page, limit);
+    const qb = this.bookingRepo.createQueryBuilder('b').orderBy('b."bookedAt"', 'DESC');
+    if (status && status !== 'all') qb.andWhere('b.status = :status', { status });
+    if (gymId) qb.andWhere('b."gymId" = :gymId', { gymId });
+    const [bookings, total] = await Promise.all([
+      qb.clone().skip(skip).take(take).getMany(),
+      qb.clone().getCount(),
     ]);
-    return bookings.map((b) => {
-      const slot = slots.find((s) => s.id === b.slotId);
-      return { ...b, slot, sessionType: slot ? types.find((t) => t.id === slot.sessionTypeId) : null, user: users.find((u) => u.id === b.userId) };
-    });
+    const data = await this.enrichBookings(bookings);
+    return paginatedResponse(data, total, p, l);
   }
 }
 
@@ -1007,6 +1078,17 @@ export class SessionsController {
   @ApiBearerAuth() @UseGuards(JwtAuthGuard, RolesGuard) @Roles('super_admin')
   attendanceSummary(@Query('month') month: string) {
     return this.svc.attendanceSummaryByGym(month || new Date().toISOString().substring(0, 7));
+  }
+
+  @Get('admin/bookings')
+  @ApiBearerAuth() @UseGuards(JwtAuthGuard, RolesGuard) @Roles('super_admin')
+  adminBookings(
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+    @Query('status') status?: string,
+    @Query('gymId') gymId?: string,
+  ) {
+    return this.svc.listBookingsAdmin(page, limit, status, gymId);
   }
 
   @Post('admin/generate-slots/:gymId')

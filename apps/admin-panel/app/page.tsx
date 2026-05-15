@@ -18,6 +18,10 @@ interface RecentSub {
   id: string;
   user?: { name?: string; email?: string };
   plan?: { name?: string };
+  userName?: string;
+  planName?: string;
+  gymName?: string;
+  amountPaid?: number;
   planType?: string;
   status: string;
   createdAt: string;
@@ -90,8 +94,9 @@ export default function AdminDashboard() {
               {recentSubs.map((s) => (
                 <div key={s.id} className="flex justify-between items-center text-[13px]" style={{ color: 'var(--t)' }}>
                   <div>
-                    <span className="font-semibold">{s.user?.name || s.user?.email || 'User'}</span>
-                    <span style={{ color: 'var(--t3)', marginLeft: 6 }}>{s.plan?.name || s.planType || 'Plan'}</span>
+                    <span className="font-semibold">{s.userName || s.user?.name || s.user?.email || 'User'}</span>
+                    <span style={{ color: 'var(--t3)', marginLeft: 6 }}>{s.planName || s.plan?.name || s.planType || 'Plan'}</span>
+                    {s.gymName && <span style={{ color: 'var(--t3)', marginLeft: 6 }}>· {s.gymName}</span>}
                   </div>
                   <div className="flex items-center gap-2">
                     <span style={{ color: 'var(--t3)' }}>{s.createdAt ? new Date(s.createdAt).toLocaleDateString('en-IN') : ''}</span>

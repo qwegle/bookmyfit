@@ -10,6 +10,13 @@ type User = {
   id: string; name: string; phone: string; email: string;
   role: string; isActive: boolean; createdAt: string;
   subscriptionStatus?: string;
+  currentSubscription?: {
+    planName?: string;
+    planType?: string;
+    gymName?: string | null;
+    amountPaid?: number;
+    endDate?: string;
+  } | null;
 };
 
 function RoleBadge({ role }: { role: string }) {
@@ -28,7 +35,8 @@ function RoleBadge({ role }: { role: string }) {
 
 function SubStatusBadge({ status }: { status?: string }) {
   if (!status) return <span style={{ color: 'var(--t3)', fontSize: 12 }}>—</span>;
-  const cls: Record<string, string> = { active: 'badge-active', expired: 'badge-danger', trial: 'badge-pending', none: '' };
+  if (status === 'none') return <span style={{ color: 'var(--t3)', fontSize: 12 }}>No membership</span>;
+  const cls: Record<string, string> = { active: 'badge-active', expired: 'badge-danger', pending: 'badge-pending', trial: 'badge-pending', none: '' };
   return <span className={cls[status] || 'badge-pending'}>{status}</span>;
 }
 
@@ -151,7 +159,16 @@ export default function UsersPage() {
                     </td>
                     <td>{u.phone}</td>
                     <td><RoleBadge role={u.role} /></td>
-                    <td><SubStatusBadge status={u.subscriptionStatus} /></td>
+                    <td>
+                      <SubStatusBadge status={u.subscriptionStatus} />
+                      {u.currentSubscription && (
+                        <div style={{ color: 'var(--t2)', fontSize: 11, marginTop: 5, maxWidth: 220 }}>
+                          {u.currentSubscription.planName || u.currentSubscription.planType}
+                          {u.currentSubscription.gymName ? ` · ${u.currentSubscription.gymName}` : ''}
+                          {u.currentSubscription.amountPaid ? ` · Rs ${Number(u.currentSubscription.amountPaid).toLocaleString('en-IN')}` : ''}
+                        </div>
+                      )}
+                    </td>
                     <td><span className={u.isActive ? 'badge-active' : 'badge-danger'}>{u.isActive ? 'Active' : 'Suspended'}</span></td>
                     <td style={{ color: 'var(--t2)', fontSize: 12 }}>
                       {u.createdAt ? new Date(u.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}

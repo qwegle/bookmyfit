@@ -1,4 +1,4 @@
-import { Injectable, Inject, BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Inject, BadRequestException, ConflictException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -11,15 +11,31 @@ import { UserEntity } from '../../database/entities/user.entity';
 import { FraudAlertEntity } from '../../database/entities/misc.entity';
 import { BookingQrEntity } from '../../database/entities/booking-qr.entity';
 import { SessionBookingEntity } from '../../database/entities/session-booking.entity';
+import { SessionSlotEntity } from '../../database/entities/session-slot.entity';
 import { REDIS_CLIENT } from '../../common/redis/redis.module';
 
 const QR_EXPIRY_SECONDS = 30;
 const VELOCITY_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 const VELOCITY_THRESHOLD = 3;
+const CHECKIN_GRACE_BEFORE_MINUTES = 15;
+const CHECKIN_GRACE_AFTER_MINUTES = 30;
 
 function isPastDateOnly(endDate: string | Date) {
   const iso = endDate instanceof Date ? endDate.toISOString().slice(0, 10) : String(endDate).slice(0, 10);
   return iso < new Date().toISOString().slice(0, 10);
+}
+
+function nowISTParts() {
+  const d = new Date(Date.now() + 5.5 * 3600 * 1000);
+  return {
+    date: d.toISOString().slice(0, 10),
+    minutes: d.getUTCHours() * 60 + d.getUTCMinutes(),
+  };
+}
+
+function minutesOf(time: string) {
+  const [h, m] = String(time || '00:00').split(':').map(Number);
+  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
 }
 
 @Injectable()
@@ -33,6 +49,7 @@ export class QrService {
     @InjectRepository(FraudAlertEntity) private readonly fraudAlerts: Repository<FraudAlertEntity>,
     @InjectRepository(BookingQrEntity) private readonly bookingQrs: Repository<BookingQrEntity>,
     @InjectRepository(SessionBookingEntity) private readonly sessionBookings: Repository<SessionBookingEntity>,
+    @InjectRepository(SessionSlotEntity) private readonly sessionSlots: Repository<SessionSlotEntity>,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
@@ -76,6 +93,7 @@ export class QrService {
     }
 
     let bookingQr: BookingQrEntity | null = null;
+    let booking: SessionBookingEntity | null = null;
     if (isBookingQr) {
       if (payload.gym !== gymId) {
         await this.logFailure(qrToken, gymId, 'failed_invalid', 'QR booked for another gym');
@@ -100,6 +118,33 @@ export class QrService {
       if (new Date(bookingQr.expiresAt) <= new Date()) {
         await this.logFailure(qrToken, gymId, 'failed_expired', 'Booking QR expired');
         throw new UnauthorizedException('QR code expired or invalid');
+      }
+
+      booking = bookingQr.slotBookingId ? await this.sessionBookings.findOne({ where: { id: bookingQr.slotBookingId } }) : null;
+      if (!booking || booking.gymId !== gymId || booking.userId !== userId || booking.subscriptionId !== subscriptionId) {
+        await this.logFailure(qrToken, gymId, 'failed_invalid', 'Booking record mismatch');
+        throw new UnauthorizedException('Booking is invalid');
+      }
+      if (booking.status === 'attended') {
+        await this.logFailure(qrToken, gymId, 'failed_invalid', 'Booking already attended');
+        throw new ConflictException('Booking already checked in');
+      }
+      if (booking.status !== 'confirmed') {
+        await this.logFailure(qrToken, gymId, 'failed_invalid', `Booking status is ${booking.status}`);
+        throw new UnauthorizedException('Booking is not active');
+      }
+
+      const slot = await this.sessionSlots.findOne({ where: { id: booking.slotId } });
+      if (!slot) {
+        await this.logFailure(qrToken, gymId, 'failed_invalid', 'Slot missing');
+        throw new UnauthorizedException('Booking slot is invalid');
+      }
+      const now = nowISTParts();
+      const start = minutesOf(slot.startTime) - CHECKIN_GRACE_BEFORE_MINUTES;
+      const end = minutesOf(slot.endTime) + CHECKIN_GRACE_AFTER_MINUTES;
+      if (slot.date !== now.date || now.minutes < start || now.minutes > end) {
+        await this.logFailure(qrToken, gymId, 'failed_invalid', 'Outside booked slot check-in window');
+        throw new BadRequestException('This QR can be used only around the booked slot time');
       }
     }
 
@@ -180,9 +225,94 @@ export class QrService {
       user: { id: userId, name: user?.name, phone: user?.phone || user?.email },
       gym: { id: gym.id, name: gym.name },
       planType: sub.planType,
+      bookingRef: booking?.bookingRef,
       gymEarns,
       adminEarns,
       checkinTime: checkin.checkinTime,
+    };
+  }
+
+  /** Gym staff fallback: enter the booking reference / booking ID printed in the app. */
+  async validateManualCode(code: string, gymId: string) {
+    const clean = String(code || '').trim();
+    if (!clean) throw new BadRequestException('Booking ID is required');
+
+    const booking = await this.sessionBookings.createQueryBuilder('b')
+      .where('b."gymId" = :gymId', { gymId })
+      .andWhere('(LOWER(b.id::text) = LOWER(:code) OR UPPER(b."bookingRef") = UPPER(:code))', { code: clean })
+      .getOne();
+    if (!booking) throw new NotFoundException('Booking not found for this gym');
+    if (booking.status === 'attended') throw new ConflictException('This booking is already checked in');
+    if (booking.status === 'cancelled') throw new ConflictException('This booking was cancelled');
+    if (booking.status === 'not_attended') throw new ConflictException('This booking has already expired');
+    const slot = await this.sessionSlots.findOne({ where: { id: booking.slotId } });
+    if (!slot) throw new UnauthorizedException('Booking slot is invalid');
+    const now = nowISTParts();
+    const start = minutesOf(slot.startTime) - CHECKIN_GRACE_BEFORE_MINUTES;
+    const end = minutesOf(slot.endTime) + CHECKIN_GRACE_AFTER_MINUTES;
+    if (slot.date !== now.date || now.minutes < start || now.minutes > end) {
+      throw new BadRequestException('This booking can be checked in only around the booked slot time');
+    }
+
+    const sub = booking.subscriptionId
+      ? await this.subs.findOne({ where: { id: booking.subscriptionId } })
+      : null;
+    if (!sub || sub.userId !== booking.userId || sub.status !== 'active' || isPastDateOnly(sub.endDate)) {
+      throw new UnauthorizedException('Subscription not active');
+    }
+
+    const coveredGyms = sub.gymIds || [];
+    if (sub.planType === 'same_gym' && !coveredGyms.includes(gymId)) {
+      throw new UnauthorizedException('This plan does not cover this gym');
+    }
+    if (sub.planType === 'day_pass' && coveredGyms.length > 0 && !coveredGyms.includes(gymId)) {
+      throw new UnauthorizedException('This day pass does not cover this gym');
+    }
+
+    const gym = await this.gyms.findOne({ where: { id: gymId } });
+    if (!gym || gym.status !== 'active') throw new BadRequestException('Gym not available');
+
+    const today = new Date().toISOString().slice(0, 10);
+    const dailyKey = `checkin:daily:${booking.userId}:${today}`;
+    const existingCheckinGymId = await this.redis.get(dailyKey);
+    if (existingCheckinGymId && existingCheckinGymId !== gymId) {
+      throw new ConflictException('Already checked in at another gym today');
+    }
+
+    booking.status = 'attended';
+    (booking as any).checkinAt = new Date();
+    await this.sessionBookings.save(booking);
+    await this.redis.set(dailyKey, gymId, 'EX', 24 * 60 * 60);
+
+    const qrToken = `MANUAL_${booking.id}_${Date.now()}`;
+    const checkin = await this.checkins.save(
+      this.checkins.create({
+        userId: booking.userId,
+        gymId,
+        subscriptionId: sub.id,
+        qrToken,
+        status: 'success',
+      }),
+    );
+    const user = await this.users.findOne({ where: { id: booking.userId } });
+    const ratePerDay = Number((gym as any).ratePerDay ?? 50);
+    const commissionRate = Number((gym as any).commissionRate ?? 15) / 100;
+    const gymEarns = ratePerDay * (1 - commissionRate);
+    const adminEarns = ratePerDay * commissionRate;
+
+    return {
+      success: true,
+      manual: true,
+      checkinId: checkin.id,
+      bookingId: booking.id,
+      bookingRef: booking.bookingRef,
+      user: { id: booking.userId, name: user?.name, phone: user?.phone || user?.email },
+      gym: { id: gym.id, name: gym.name },
+      planType: sub.planType,
+      gymEarns,
+      adminEarns,
+      checkinTime: checkin.checkinTime,
+      message: 'Manual check-in recorded',
     };
   }
 

@@ -13,6 +13,10 @@ class ValidateQrDto {
   @IsString() qrToken: string;
   @IsUUID() gymId: string;
 }
+class ValidateManualDto {
+  @IsString() code: string;
+  @IsUUID() gymId: string;
+}
 
 @ApiTags('QR Check-in')
 @ApiBearerAuth()
@@ -33,6 +37,14 @@ export class QrController {
   @ApiOperation({ summary: 'Validate a QR token (gym panel scanner)' })
   validate(@Body() dto: ValidateQrDto) {
     return this.qr.validateQr(dto.qrToken, dto.gymId);
+  }
+
+  @Post('validate-manual')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('gym_owner', 'gym_staff', 'super_admin')
+  @ApiOperation({ summary: 'Validate a booking reference manually when QR scan fails' })
+  validateManual(@Body() dto: ValidateManualDto) {
+    return this.qr.validateManualCode(dto.code, dto.gymId);
   }
 
   @Get('history')
