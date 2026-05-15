@@ -12,7 +12,7 @@ const PLAN_FEATURES = {
   personal_training: ['Monthly trainer add-ons', 'Trainer base price from gym portal', 'Cashfree checkout'],
 };
 
-type ServiceKey = 'day_pass' | 'same_gym' | 'multi_gym' | 'wellness' | 'personal_training';
+type ServiceKey = 'day_pass' | 'same_gym' | 'wellness' | 'personal_training';
 type CommissionMode = 'percent' | 'fixed';
 type CommissionSetting = { useGlobal: boolean; mode: CommissionMode; value: number };
 type GlobalCommission = { mode: CommissionMode; value: number };
@@ -20,7 +20,6 @@ type GlobalCommission = { mode: CommissionMode; value: number };
 const SERVICE_ROWS: Array<{ key: ServiceKey; name: string; description: string; color: string; baseLabel: string; exampleBase: number }> = [
   { key: 'day_pass', name: '1-Day Pass', description: 'Drop-in pass for one gym visit', color: '#00AFFF', baseLabel: 'Default day-pass base', exampleBase: 149 },
   { key: 'same_gym', name: 'Same Gym Pass', description: 'Subscription for one selected gym', color: '#CCFF00', baseLabel: 'Example gym monthly base', exampleBase: 599 },
-  { key: 'multi_gym', name: 'Multi Gym Pass', description: 'Platform pass for all partner gyms', color: '#9B00FF', baseLabel: 'Monthly base', exampleBase: 1499 },
   { key: 'wellness', name: 'Wellness Services', description: 'Spa, recovery, and home wellness services', color: '#FFB400', baseLabel: 'Example service base', exampleBase: 1000 },
   { key: 'personal_training', name: 'Personal Training', description: 'Monthly trainer booking and subscription add-on', color: '#64A0FF', baseLabel: 'Example trainer monthly base', exampleBase: 3000 },
 ];
@@ -28,7 +27,6 @@ const SERVICE_ROWS: Array<{ key: ServiceKey; name: string; description: string; 
 const DEFAULT_SERVICE_COMMISSIONS: Record<ServiceKey, CommissionSetting> = {
   day_pass: { useGlobal: true, mode: 'percent', value: 0 },
   same_gym: { useGlobal: true, mode: 'percent', value: 0 },
-  multi_gym: { useGlobal: true, mode: 'percent', value: 0 },
   wellness: { useGlobal: true, mode: 'percent', value: 0 },
   personal_training: { useGlobal: true, mode: 'percent', value: 0 },
 };
@@ -87,7 +85,6 @@ export default function PlansPage() {
         setCommissions({
           day_pass: normalizeSetting(data?.day_pass?.commissionSetting),
           same_gym: normalizeSetting(data?.same_gym?.commissionSetting),
-          multi_gym: normalizeSetting(data?.multi_gym?.commissionSetting),
           wellness: normalizeSetting(data?.wellness?.commissionSetting),
           personal_training: normalizeSetting(data?.personal_training?.commissionSetting),
         });
@@ -117,7 +114,7 @@ export default function PlansPage() {
         globalCommission,
         day_pass: { basePrice: prices.day_pass, commission: commissions.day_pass },
         same_gym: { commission: commissions.same_gym },
-        multi_gym: { basePrice: prices.multi_gym, commission: commissions.multi_gym },
+        multi_gym: { basePrice: prices.multi_gym },
         wellness: { commission: commissions.wellness },
         personal_training: { commission: commissions.personal_training },
       });
@@ -174,10 +171,47 @@ export default function PlansPage() {
               </div>
             </div>
 
+            <div className="glass" style={{ padding: 22, borderRadius: 16, borderLeft: '3px solid #9B00FF' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ flex: '1 1 340px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                    <span style={{ fontFamily: 'var(--serif)', fontSize: 20, fontWeight: 900 }}>Multi Gym Pass</span>
+                    <span style={{ fontSize: 10, letterSpacing: 1, textTransform: 'uppercase', color: '#9B00FF', background: '#9B00FF22', padding: '2px 8px', borderRadius: 100 }}>platform price</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--t2)', marginBottom: 10 }}>
+                    Admin controls the base monthly pass price. No checkout commission is added on top of this pass.
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {(PLAN_FEATURES.multi_gym || []).map((feature) => (
+                      <span key={feature} style={{ fontSize: 11, color: 'var(--t)', background: 'var(--surface)', padding: '3px 10px', borderRadius: 100, border: '1px solid var(--border)' }}>
+                        {feature}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ minWidth: 230 }}>
+                  <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>Monthly base price</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ color: 'var(--t2)', fontSize: 13 }}>Rs</span>
+                    <input
+                      type="number"
+                      value={prices.multi_gym}
+                      onChange={(e) => setPrices((currentPrices) => ({ ...currentPrices, multi_gym: Number(e.target.value) }))}
+                      className="glass-input"
+                      style={{ width: 130, textAlign: 'right', fontSize: 18, fontWeight: 700 }}
+                    />
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--t2)', marginTop: 8 }}>
+                    User pays <strong style={{ color: '#fff' }}>{money(prices.multi_gym)}</strong> per month.
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {SERVICE_ROWS.map((row) => {
               const setting = commissions[row.key];
               const current = effective(setting, globalCommission);
-              const base = row.key === 'day_pass' ? prices.day_pass : row.key === 'multi_gym' ? prices.multi_gym : row.exampleBase;
+              const base = row.key === 'day_pass' ? prices.day_pass : row.exampleBase;
               const extra = addOn(base, current);
               const total = base + extra;
               return (
@@ -198,7 +232,7 @@ export default function PlansPage() {
                       </div>
                     </div>
 
-                    {(row.key === 'day_pass' || row.key === 'multi_gym') && (
+                    {row.key === 'day_pass' && (
                       <div style={{ minWidth: 210 }}>
                         <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>{row.baseLabel}</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

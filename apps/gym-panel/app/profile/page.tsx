@@ -10,10 +10,13 @@ interface FormState {
   description: string;
   address: string;
   city: string;
+  area: string;
   pinCode: string;
   phone: string;
   email: string;
   website: string;
+  lat: string;
+  lng: string;
 }
 
 export default function ProfilePage() {
@@ -24,10 +27,13 @@ export default function ProfilePage() {
     description: '',
     address: '',
     city: '',
+    area: '',
     pinCode: '',
     phone: '',
     email: '',
     website: '',
+    lat: '',
+    lng: '',
   });
 
   const [gymId, setGymId] = useState('');
@@ -51,10 +57,13 @@ export default function ProfilePage() {
           description: data.description || '',
           address: data.address || '',
           city: data.city || '',
+          area: data.area || '',
           pinCode: data.pinCode || data.pincode || '',
           phone: data.phone || data.contactPhone || '',
           email: data.email || data.contactEmail || '',
           website: data.website || '',
+          lat: data.lat != null ? String(data.lat) : '',
+          lng: data.lng != null ? String(data.lng) : '',
         });
       } catch (e: any) {
         setError(e?.message || 'Could not load gym profile.');
@@ -75,10 +84,13 @@ export default function ProfilePage() {
         description: form.description,
         address: form.address,
         city: form.city,
+        area: form.area,
         pinCode: form.pinCode,
         contactPhone: form.phone,
         contactEmail: form.email,
         website: form.website,
+        lat: form.lat,
+        lng: form.lng,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -150,7 +162,7 @@ export default function ProfilePage() {
               <div className="w-full space-y-2 mt-2">
                 <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--t2)' }}>
                   <MapPin size={14} />
-                  <span>{form.address || '--'}{form.city ? `, ${form.city}` : ''}</span>
+                  <span>{form.address || '--'}{form.area ? `, ${form.area}` : ''}{form.city ? `, ${form.city}` : ''}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm" style={{ color: 'var(--t2)' }}>
                   <Phone size={14} />
@@ -239,6 +251,17 @@ export default function ProfilePage() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--t2)' }}>
+                    Area
+                  </label>
+                  <input
+                    className="glass-input w-full"
+                    value={form.area}
+                    onChange={handleChange('area')}
+                    placeholder="Area / locality"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--t2)' }}>
                     City
                   </label>
                   <input
@@ -257,6 +280,31 @@ export default function ProfilePage() {
                     value={form.pinCode}
                     onChange={handleChange('pinCode')}
                     placeholder="Pin code"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--t2)' }}>
+                    Latitude
+                  </label>
+                  <input
+                    className="glass-input w-full"
+                    value={form.lat}
+                    onChange={handleChange('lat')}
+                    placeholder="e.g. 20.2961"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--t2)' }}>
+                    Longitude
+                  </label>
+                  <input
+                    className="glass-input w-full"
+                    value={form.lng}
+                    onChange={handleChange('lng')}
+                    placeholder="e.g. 85.8245"
                   />
                 </div>
               </div>

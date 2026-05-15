@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState, useCallback, useRef } from 'react';
+import * as Location from 'expo-location';
 import { colors, fonts, radius } from '../theme/brand';
 import { IconArrowLeft, IconStar, IconPin, IconFilter, IconCheck, IconSearch } from '../components/Icons';
 import { gymsApi, subscriptionsApi } from '../lib/api';
@@ -56,7 +57,19 @@ export default function GymListingPage() {
   const [hasMultiGymSub, setHasMultiGymSub] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [passPricingConfig, setPassPricingConfig] = useState<any>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const pageRef = useRef(1);
+
+  useEffect(() => {
+    let alive = true;
+    Location.requestForegroundPermissionsAsync()
+      .then(({ status }) => status === 'granted' ? Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }) : null)
+      .then((loc) => {
+        if (alive && loc?.coords) setUserLocation({ lat: loc.coords.latitude, lng: loc.coords.longitude });
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const filterByCat = (list: any[], cat: string) => {
     if (cat === 'all') return list;
@@ -67,13 +80,18 @@ export default function GymListingPage() {
   };
 
   const load = useCallback(async (pg: number, cat: string) => {
-    // Only show full skeleton on very first load (no data yet)
-    if (pg === 1 && gyms.length === 0) setLoading(true);
+    // Show full skeleton for first page loads; pagination/category switches keep the page responsive.
+    if (pg === 1) setLoading(true);
     else if (pg > 1) setLoadingMore(true);
     else setLoadingMore(true); // category switch: spinner, keep existing list
     try {
       setLoadError('');
-      const params: any = { page: pg, limit: 100 }; // show every gym returned by the database, then filter locally
+      const params: any = { page: pg, limit: 100 }; // show every active gym returned by the database, then filter locally
+      if (userLocation) {
+        params.lat = userLocation.lat;
+        params.lng = userLocation.lng;
+        params.sort = activeSort === 'distance' ? 'nearest' : undefined;
+      }
       const res: any = await gymsApi.list(params);
       const raw = Array.isArray(res) ? res : res?.gyms || res?.data || [];
       const list = filterByCat(raw, cat);
@@ -88,12 +106,12 @@ export default function GymListingPage() {
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [gyms.length]);
+  }, [userLocation, activeSort]);
 
   useEffect(() => {
     setPage(1);
     load(1, activeCategory);
-  }, [activeCategory]);
+  }, [activeCategory, userLocation, activeSort, load]);
 
   useEffect(() => {
     if (paramCat) setActiveCategory(paramCat);

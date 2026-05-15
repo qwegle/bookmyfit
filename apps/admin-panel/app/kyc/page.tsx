@@ -19,7 +19,7 @@ type Gym = {
   commissionRate?: number;
   kycStatus?: string;
   kycReviewNote?: string;
-  kycDocuments?: Array<{ type: string; name: string; url?: string; fields?: Record<string, any>; uploadedAt?: string; status?: string; reviewNote?: string }>;
+  kycDocuments?: Array<{ type: string; name: string; url?: string; fields?: Record<string, any>; uploadedAt?: string; status?: string; reviewNote?: string; reviewedAt?: string }>;
 };
 
 type FilterTab = 'pending' | 'approved' | 'rejected' | 'all';
@@ -66,7 +66,7 @@ export default function KYCPage() {
   const load = async (status?: string) => {
     setLoading(true);
     try {
-      const path = status && status !== 'all' ? `/gyms?kycStatus=${status}&page=1&limit=100` : '/gyms?page=1&limit=100';
+      const path = status && status !== 'all' ? `/gyms/admin/list?kycStatus=${status}&page=1&limit=100` : '/gyms/admin/list?page=1&limit=100';
       const data = await api.get<any>(path);
       setGyms(Array.isArray(data) ? data : data?.data ?? []);
     } catch {
@@ -104,6 +104,26 @@ export default function KYCPage() {
       setRejectReason('');
     } catch (e: any) {
       toast(e.message || 'Rejection failed', 'error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const reviewDocument = async (gymId: string, type: string, status: 'approved' | 'rejected') => {
+    const reason = status === 'rejected' ? window.prompt('Reason for rejecting this document?') || 'Rejected by admin' : '';
+    const key = `${gymId}:${type}`;
+    setActionLoading(key);
+    try {
+      const updated: any = await api.patch(`/gyms/${gymId}/kyc-documents/${type}/review`, { status, reason });
+      setGyms((prev) => prev.map((g) => g.id === gymId ? {
+        ...g,
+        kycStatus: updated?.kycStatus || g.kycStatus,
+        kycReviewNote: updated?.kycReviewNote || null,
+        kycDocuments: updated?.kycDocuments || g.kycDocuments,
+      } : g));
+      toast(status === 'approved' ? 'Document approved' : 'Document rejected');
+    } catch (e: any) {
+      toast(e.message || 'Document review failed', 'error');
     } finally {
       setActionLoading(null);
     }
@@ -269,7 +289,10 @@ export default function KYCPage() {
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                                   {g.kycDocuments.map((doc) => (
                                     <div key={doc.type} style={{ border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: 10 }}>
-                                      <div style={{ color: '#fff', fontWeight: 700, marginBottom: 6 }}>{doc.name}</div>
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 6 }}>
+                                        <div style={{ color: '#fff', fontWeight: 700 }}>{doc.name}</div>
+                                        <StatusBadge status={doc.status || 'in_review'} />
+                                      </div>
                                       {doc.url && <a href={doc.url} target="_blank" style={{ color: 'var(--accent)', fontSize: 12 }}>Open document</a>}
                                       {doc.fields && Object.entries(doc.fields).map(([key, value]) => (
                                         <div key={key} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12, marginTop: 4 }}>
@@ -277,6 +300,27 @@ export default function KYCPage() {
                                           <span style={{ color: 'var(--t2)', textAlign: 'right', wordBreak: 'break-word' }}>{String(value || '—')}</span>
                                         </div>
                                       ))}
+                                      {doc.reviewNote && (
+                                        <div style={{ color: '#ff9f9f', fontSize: 12, marginTop: 8 }}>Note: {doc.reviewNote}</div>
+                                      )}
+                                      <div className="flex gap-2 mt-3">
+                                        <button
+                                          onClick={() => reviewDocument(g.id, doc.type, 'approved')}
+                                          disabled={actionLoading === `${g.id}:${doc.type}` || doc.status === 'approved'}
+                                          className="btn btn-primary text-xs"
+                                          style={{ padding: '4px 10px', fontSize: 11, opacity: doc.status === 'approved' ? 0.5 : 1 }}
+                                        >
+                                          Approve Form
+                                        </button>
+                                        <button
+                                          onClick={() => reviewDocument(g.id, doc.type, 'rejected')}
+                                          disabled={actionLoading === `${g.id}:${doc.type}` || doc.status === 'rejected'}
+                                          className="btn text-xs"
+                                          style={{ padding: '4px 10px', fontSize: 11, background: 'rgba(255,60,60,0.15)', color: '#FF3C3C', border: '1px solid rgba(255,60,60,0.3)', opacity: doc.status === 'rejected' ? 0.5 : 1 }}
+                                        >
+                                          Reject Form
+                                        </button>
+                                      </div>
                                     </div>
                                   ))}
                                 </div>

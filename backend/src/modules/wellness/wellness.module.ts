@@ -148,15 +148,12 @@ class WellnessService {
     if (!uuidRe.test(serviceId)) throw new NotFoundException('Service not found');
     const service = await this.services.findOne({ where: { id: serviceId } });
     if (!service) throw new NotFoundException('Service not found');
-    const partner = await this.partners.findOne({ where: { id: service.partnerId } });
     const configRow = await this.configRepo.findOne({ where: { key: PLATFORM_PRICING_CONFIG_KEY } });
     const baseAmount = Number(service.price);
     const centralCommission = serviceCommission(configRow?.value, 'wellness');
     const platformAddOn = commissionAmount(baseAmount, centralCommission);
     const amount = applyCheckoutCommission(baseAmount, centralCommission);
-    const platformCommission = platformAddOn > 0
-      ? platformAddOn
-      : baseAmount * (Number(partner?.commissionRate || 0) / 100);
+    const platformCommission = platformAddOn;
     const orderId = `WL_${uuid().slice(0, 18)}`;
     const booking = await this.bookings.save(this.bookings.create({
       userId, partnerId: service.partnerId, serviceId,

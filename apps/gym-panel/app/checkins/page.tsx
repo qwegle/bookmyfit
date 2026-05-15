@@ -17,7 +17,7 @@ interface CheckIn {
   adminEarns: number;
 }
 
-interface GymMeta { name: string; ratePerDay: number; commissionRate: number }
+interface GymMeta { name: string; ratePerDay: number; commissionRate: number; payoutMode?: string }
 
 function SkeletonRow() {
   return (
@@ -99,8 +99,8 @@ export default function GymCheckinsPage() {
       {gymMeta && (
         <div className="glass card p-3 mb-5 flex items-center gap-6" style={{ fontSize: 13 }}>
           <span style={{ color: 'var(--t2)' }}>Rate per visit-day: <strong style={{ color: 'var(--t)' }}>₹{gymMeta.ratePerDay}</strong></span>
-          <span style={{ color: 'var(--t2)' }}>Commission: <strong style={{ color: 'var(--t)' }}>{gymMeta.commissionRate}%</strong></span>
-          <span style={{ color: 'var(--t2)' }}>Your cut per visit: <strong style={{ color: 'var(--accent)' }}>₹{(gymMeta.ratePerDay * (1 - gymMeta.commissionRate / 100)).toFixed(0)}</strong></span>
+          <span style={{ color: 'var(--t2)' }}>Platform fee / scan: <strong style={{ color: 'var(--t)' }}>₹0</strong></span>
+          <span style={{ color: 'var(--t2)' }}>Your payout per visit: <strong style={{ color: 'var(--accent)' }}>₹{Number(gymMeta.ratePerDay || 0).toFixed(0)}</strong></span>
           <span style={{ color: 'var(--t3)', fontSize: 11, marginLeft: 'auto' }}>Settled end of month</span>
         </div>
       )}

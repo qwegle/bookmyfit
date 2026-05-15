@@ -58,40 +58,21 @@ export default function ReportsPage() {
 
   useEffect(() => {
     setLoading(true);
-    // Build reports only from available API data; missing metrics stay empty.
-    Promise.all([
-      api.get<any>('/checkins/today').catch(() => null),
-      api.get<any>('/settlements/my-gym').catch(() => null),
-      api.get<any>('/gyms/my-members').catch(() => null),
-    ]).then(([checkins, settlements, members]) => {
-      // Build report data from available real data
-      const todayCount = checkins?.count ?? checkins?.total ?? (Array.isArray(checkins) ? checkins.length : null);
-      const memberRows = Array.isArray(members) ? members : members?.data ?? members?.members ?? [];
-      const activeMembers = Array.isArray(memberRows) ? memberRows.filter((m: any) => m.status === 'active').length : null;
-      const history = Array.isArray(settlements?.history) ? settlements.history : [];
-      const revenueShare = history.reduce((sum: number, s: any) => sum + (s.netPayout || 0), 0);
-
-      if (todayCount !== null || activeMembers !== null) {
-        setReport({
-          totalCheckins: todayCount ?? EMPTY_REPORT.totalCheckins,
-          uniqueMembers: activeMembers ?? EMPTY_REPORT.uniqueMembers,
-          peakHour: EMPTY_REPORT.peakHour,
-          revenueShare: revenueShare || EMPTY_REPORT.revenueShare,
-          dailyCheckins: EMPTY_REPORT.dailyCheckins,
-          topMembers: Array.isArray(memberRows)
-            ? memberRows.slice(0, 5).map((m: any, i: number) => ({
-                id: m._id || m.id || String(i),
-                name: m.name || 'Unknown',
-                visits: m.totalVisits || 0,
-                plan: m.planName || m.planType || 'Standard',
-                lastVisit: m.lastVisit || '',
-              }))
-            : EMPTY_REPORT.topMembers,
-        });
-      } else {
-        setReport(EMPTY_REPORT);
-      }
-    }).catch(() => setReport(EMPTY_REPORT))
+    const now = new Date();
+    const fromDate = new Date(now);
+    const toDate = new Date(now);
+    if (period === 'week') fromDate.setDate(now.getDate() - 6);
+    if (period === 'month') fromDate.setDate(now.getDate() - 29);
+    if (period === 'last_month') {
+      fromDate.setMonth(now.getMonth() - 1, 1);
+      toDate.setDate(0);
+    }
+    const from = period === 'custom' ? customFrom : fromDate.toISOString().slice(0, 10);
+    const to = period === 'custom' ? customTo : toDate.toISOString().slice(0, 10);
+    const query = from && to ? `?from=${from}&to=${to}` : '';
+    api.get<ReportData>(`/gyms/my-report${query}`)
+      .then((data) => setReport(data || EMPTY_REPORT))
+      .catch(() => setReport(EMPTY_REPORT))
       .finally(() => setLoading(false));
   }, [period, customFrom, customTo]);
 

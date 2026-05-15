@@ -37,7 +37,7 @@ export default function AdminDashboard() {
     Promise.all([
       api.get('/analytics/summary').catch(() => null),
       api.get('/subscriptions/all').catch(() => ({})),
-      api.get('/gyms?limit=200').catch(() => ({})),
+      api.get('/gyms/admin/list?limit=200').catch(() => ({})),
     ]).then(([sum, subs, gymRes]) => {
       setSummary(sum as Summary);
       const subsArr = Array.isArray(subs) ? subs : (subs as any)?.data ?? [];

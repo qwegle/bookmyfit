@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import Shell from '../../components/Shell';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/Toast';
-import { Plus, Edit3, Trash2, Check, X, MapPin, Star, Clock, Tag, Building2, Image as ImageIcon, Percent, Activity } from 'lucide-react';
+import { Plus, Edit3, Trash2, Check, X, MapPin, Star, Clock, Tag, Building2, Image as ImageIcon, Activity } from 'lucide-react';
 
 const SERVICE_CATEGORIES = ['Massage', 'Cupping', 'Physio', 'Spa', 'Nutrition', 'Recovery', 'Other'];
 const SERVICE_TYPES = ['Spa', 'Home', 'Physio', 'Massage', 'Yoga', 'Nutrition'];
@@ -42,7 +42,7 @@ const pill = (color: string): React.CSSProperties => ({
 type Partner = {
   id: string; name: string; serviceType: string; city: string; area: string;
   address: string; rating: number; reviewCount: number; status: string;
-  discountPercent: number; distanceLabel: string; photos: string[]; commissionRate: number;
+  discountPercent: number; distanceLabel: string; photos: string[]; commissionRate?: number;
   lat?: number; lng?: number;
 };
 type Service = {
@@ -52,7 +52,7 @@ type Service = {
 };
 type ApprovalStatus = NonNullable<Service['approvalStatus']>;
 
-const defaultPartnerForm = { name: '', serviceType: 'Spa', city: '', area: '', address: '', status: 'active', discountPercent: '0', distanceLabel: '', commissionRate: '', photos: '' };
+const defaultPartnerForm = { name: '', serviceType: 'Spa', city: '', area: '', address: '', status: 'active', discountPercent: '0', distanceLabel: '', photos: '' };
 const defaultServiceForm = { name: '', category: 'Massage', price: '', originalPrice: '', durationMinutes: '60', partnerId: '', imageUrl: '', isActive: true, approvalStatus: 'approved' };
 
 function asArray(value: any) {
@@ -108,7 +108,6 @@ export default function WellnessPage() {
       address: p.address || '', status: p.status,
       discountPercent: String(p.discountPercent || 0),
       distanceLabel: p.distanceLabel || '',
-      commissionRate: String(p.commissionRate ?? ''),
       photos: Array.isArray(p.photos) ? p.photos.join(', ') : String(p.photos || ''),
     });
     setShowPartnerForm(true);
@@ -124,7 +123,6 @@ export default function WellnessPage() {
       status: partnerForm.status,
       discountPercent: Number(partnerForm.discountPercent) || 0,
       distanceLabel: partnerForm.distanceLabel,
-      ...(partnerForm.commissionRate.trim() ? { commissionRate: Number(partnerForm.commissionRate) } : {}),
       photos: partnerForm.photos ? partnerForm.photos.split(',').map(s => s.trim()).filter(Boolean) : [],
       rating: editingPartner?.rating || 0,
       reviewCount: editingPartner?.reviewCount || 0,
@@ -352,8 +350,10 @@ export default function WellnessPage() {
                   <input style={input} placeholder="e.g. 1.2 km" value={partnerForm.distanceLabel} onChange={e => setPartnerForm(f => ({ ...f, distanceLabel: e.target.value }))} />
                 </div>
                 <div>
-                  <label style={label('COMMISSION RATE (%)')}>COMMISSION RATE (%)</label>
-                  <input style={input} type="number" placeholder="25" value={partnerForm.commissionRate} onChange={e => setPartnerForm(f => ({ ...f, commissionRate: e.target.value }))} />
+                  <label style={label('COMMISSION')}>COMMISSION</label>
+                  <div style={{ ...input, color: 'rgba(255,255,255,0.58)', display: 'flex', alignItems: 'center' }}>
+                    Managed from Plan Management
+                  </div>
                 </div>
                 <div style={{ gridColumn: '1 / -1' }}>
                   <label style={label('PHOTO URLs (comma-separated)')}>PHOTO URLs (comma-separated)</label>
@@ -385,8 +385,8 @@ export default function WellnessPage() {
                     <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'rgba(255,255,255,0.5)', fontSize: 13, fontFamily: 'DM Sans, sans-serif' }}>
                       <Star size={13} /> {p.rating || '—'} ({p.reviewCount || 0} reviews)
                     </span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'rgba(255,255,255,0.5)', fontSize: 13, fontFamily: 'DM Sans, sans-serif' }}>
-                      <Percent size={13} /> {p.commissionRate ?? 'Not set'}{p.commissionRate != null ? '% commission' : ''}
+                    <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, fontFamily: 'DM Sans, sans-serif' }}>
+                      Commission managed from Plan Management
                     </span>
                     {p.distanceLabel && (
                       <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: 13, fontFamily: 'DM Sans, sans-serif' }}>📍 {p.distanceLabel}</span>

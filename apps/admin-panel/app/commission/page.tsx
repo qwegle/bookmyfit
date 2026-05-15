@@ -51,8 +51,8 @@ export default function CommissionPage() {
     },
     {
       label: 'Multi Gym Checkout',
-      value: loading ? '...' : !available ? 'Unavailable' : `${formatMoney(plans?.multi_gym?.basePrice)} + ${formatCommission(plans?.multi_gym?.commission)}`,
-      detail: 'Platform pass amount plus configured add-on',
+      value: loading ? '...' : !available ? 'Unavailable' : `${formatMoney(plans?.multi_gym?.basePrice)} / mo`,
+      detail: 'Platform-set pass price. No checkout commission is added.',
     },
     {
       label: 'Wellness Checkout',
@@ -96,7 +96,7 @@ export default function CommissionPage() {
             <tr><th>Area</th><th>Managed From</th><th>Used For</th><th></th></tr>
           </thead>
           <tbody>
-            {['Same Gym', 'Day Pass', 'Multi Gym', 'Wellness', 'Personal Training'].map((area) => (
+            {['Same Gym', 'Day Pass', 'Wellness', 'Personal Training'].map((area) => (
               <tr key={area}>
                 <td className="font-semibold text-white">{area}</td>
                 <td>Plan Management</td>
@@ -104,6 +104,12 @@ export default function CommissionPage() {
                 <td><Link className="btn btn-ghost text-xs" href="/plans">Open</Link></td>
               </tr>
             ))}
+            <tr>
+              <td className="font-semibold text-white">Multi Gym</td>
+              <td>Plan Management</td>
+              <td>Base monthly pass price only, without additional checkout commission</td>
+              <td><Link className="btn btn-ghost text-xs" href="/plans">Open</Link></td>
+            </tr>
           </tbody>
         </table>
       </div>

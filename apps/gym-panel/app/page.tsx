@@ -29,8 +29,8 @@ export default function GymDashboard() {
       const results = await Promise.allSettled([
         api.get<GymInfo>('/gyms/my-gym'),
         api.get<{ count: number }>('/checkins/today-count'),
-        api.get<Checkin[]>('/checkins/recent'),
-        api.get<any>('/gyms/my-members'),
+        api.get<any>('/gyms/my-checkins?limit=6'),
+        api.get<any>('/gyms/my-members?limit=1'),
         api.get<any>('/settlements/my-gym'),
       ]);
       if (results[0].status === 'fulfilled') setGym(results[0].value);
@@ -40,14 +40,9 @@ export default function GymDashboard() {
       setRecentCheckins(checkins);
       const rawMembers = results[3].status === 'fulfilled' ? results[3].value : null;
       const members = Array.isArray(rawMembers) ? rawMembers : rawMembers?.members || rawMembers?.data || [];
-      setActiveMembers(Array.isArray(members) ? members.filter((m: any) => (m.status || '').toLowerCase() === 'active').length : null);
+      setActiveMembers(rawMembers?.stats?.active ?? (Array.isArray(members) ? members.filter((m: any) => (m.status || '').toLowerCase() === 'active').length : null));
       const settlementData = results[4].status === 'fulfilled' ? results[4].value : null;
-      const history = Array.isArray(settlementData?.history) ? settlementData.history : [];
-      const month = new Date().toISOString().slice(0, 7);
-      const revenue = history
-        .filter((row: any) => String(row.periodStart || row.createdAt || '').slice(0, 7) === month)
-        .reduce((sum: number, row: any) => sum + Number(row.netPayout || row.amount || 0), 0);
-      setMtdRevenue(revenue || null);
+      setMtdRevenue(Number(settlementData?.current?.netPayout || 0) || null);
       setLoading(false);
     };
     fetchAll();

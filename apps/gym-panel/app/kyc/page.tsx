@@ -68,7 +68,7 @@ const STATUS_LABELS: Record<string, string> = {
   rejected: 'Rejected',
 };
 
-function StepBadge({ status }: { status: 'pending' | 'uploaded' | 'approved' }) {
+function StepBadge({ status }: { status: 'pending' | 'uploaded' | 'approved' | 'rejected' }) {
   if (status === 'approved') return (
     <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#3DFF54', background: 'rgba(61,255,84,0.1)', border: '1px solid rgba(61,255,84,0.3)', borderRadius: 20, padding: '2px 10px' }}>
       <CheckCircle size={12} /> Approved
@@ -77,6 +77,11 @@ function StepBadge({ status }: { status: 'pending' | 'uploaded' | 'approved' }) 
   if (status === 'uploaded') return (
     <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#FFA500', background: 'rgba(255,165,0,0.1)', border: '1px solid rgba(255,165,0,0.3)', borderRadius: 20, padding: '2px 10px' }}>
       <Clock size={12} /> In Review
+    </span>
+  );
+  if (status === 'rejected') return (
+    <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#FF3C3C', background: 'rgba(255,60,60,0.1)', border: '1px solid rgba(255,60,60,0.3)', borderRadius: 20, padding: '2px 10px' }}>
+      <AlertCircle size={12} /> Rejected
     </span>
   );
   return (
@@ -116,11 +121,12 @@ export default function KycPage() {
     })();
   }, []);
 
-  const getStepStatus = (type: string): 'pending' | 'uploaded' | 'approved' => {
+  const getStepStatus = (type: string): 'pending' | 'uploaded' | 'approved' | 'rejected' => {
     if (!kycData?.kycDocuments?.length) return 'pending';
-    const hasDoc = kycData.kycDocuments.some((d) => d.type === type);
-    if (!hasDoc) return 'pending';
-    if (kycData.kycStatus === 'approved') return 'approved';
+    const doc = kycData.kycDocuments.find((d) => d.type === type);
+    if (!doc) return 'pending';
+    if (doc.status === 'approved') return 'approved';
+    if (doc.status === 'rejected') return 'rejected';
     return 'uploaded';
   };
 

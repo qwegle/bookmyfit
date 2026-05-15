@@ -25,8 +25,8 @@ class GymsService {
     @InjectRepository(GymPlanEntity) private readonly gymPlans: Repository<GymPlanEntity>,
   ) {}
 
-  private safeGymQuery(alias = 'g') {
-    return this.repo.createQueryBuilder(alias)
+  private safeGymQuery(alias = 'g', includeSensitive = false) {
+    const qb = this.repo.createQueryBuilder(alias)
       .select(`${alias}.id`, 'id')
       .addSelect(`${alias}.name`, 'name')
       .addSelect(`${alias}.city`, 'city')
@@ -57,11 +57,14 @@ class GymsService {
       .addSelect(`${alias}.sameGymMonthlyPrice`, 'sameGymMonthlyPrice')
       .addSelect(`${alias}.capacity`, 'capacity')
       .addSelect(`${alias}.ownerId`, 'ownerId')
-      .addSelect(`${alias}.kycDocuments`, 'kycDocuments')
       .addSelect(`${alias}.kycStatus`, 'kycStatus')
-      .addSelect(`${alias}.kycReviewNote`, 'kycReviewNote')
       .addSelect(`${alias}.createdAt`, 'createdAt')
       .addSelect(`${alias}.updatedAt`, 'updatedAt');
+    if (includeSensitive) {
+      qb.addSelect(`${alias}.kycDocuments`, 'kycDocuments')
+        .addSelect(`${alias}.kycReviewNote`, 'kycReviewNote');
+    }
+    return qb;
   }
 
   private normalizeGym(row: any) {
@@ -72,6 +75,8 @@ class GymsService {
     const coverPhoto = row.coverPhoto || photos[0] || null;
     return {
       ...row,
+      distanceKm: row.distanceKm !== undefined && row.distanceKm !== null ? Math.round(Number(row.distanceKm) * 10) / 10 : undefined,
+      distance: row.distanceKm !== undefined && row.distanceKm !== null ? `${(Math.round(Number(row.distanceKm) * 10) / 10).toFixed(1)} km` : undefined,
       coverPhoto,
       coverImage: coverPhoto,
       photos,
@@ -149,8 +154,8 @@ class GymsService {
       dayPassPrice: raw.dayPassPrice === '' ? null : raw.dayPassPrice,
       sameGymMonthlyPrice: raw.sameGymMonthlyPrice === '' ? null : raw.sameGymMonthlyPrice,
       capacity: raw.capacity,
-      lat: raw.lat,
-      lng: raw.lng,
+      lat: raw.lat === '' ? undefined : raw.lat,
+      lng: raw.lng === '' ? undefined : raw.lng,
     };
 
     if (raw.openingHours && (!patch.openingTime || !patch.closingTime)) {
@@ -177,7 +182,17 @@ class GymsService {
     for (const key of ['dayPassPrice', 'sameGymMonthlyPrice', 'capacity', 'lat', 'lng']) {
       if (clean[key] !== null && clean[key] !== undefined) clean[key] = Number(clean[key]);
     }
+    if (clean.lat !== undefined && (!Number.isFinite(clean.lat) || clean.lat < -90 || clean.lat > 90)) {
+      throw new BadRequestException('Latitude must be between -90 and 90');
+    }
+    if (clean.lng !== undefined && (!Number.isFinite(clean.lng) || clean.lng < -180 || clean.lng > 180)) {
+      throw new BadRequestException('Longitude must be between -180 and 180');
+    }
     if (isAdmin) {
+      const allowedStatuses = ['pending', 'active', 'suspended', 'rejected', 'inactive'];
+      if (raw.status !== undefined && !allowedStatuses.includes(String(raw.status))) {
+        throw new BadRequestException('Invalid gym status');
+      }
       Object.assign(clean, this.compactPatch({
         tier: raw.tier,
         status: raw.status,
@@ -253,6 +268,24 @@ class GymsService {
       ],
     },
   };
+
+  private recomputeKycStatus(docs: any[] = []) {
+    const requiredTypes = Object.keys(this.kycSchemas);
+    if (!docs.length) return 'not_started';
+    const byType = new Map(docs.map((doc) => [doc.type, doc]));
+    const allRequiredApproved = requiredTypes.every((type) => byType.get(type)?.status === 'approved');
+    if (allRequiredApproved) return 'approved';
+    if (docs.some((doc) => doc.status === 'in_review')) return 'in_review';
+    if (docs.some((doc) => doc.status === 'rejected')) return 'rejected';
+    return 'in_review';
+  }
+
+  private statusForKyc(kycStatus: string, currentStatus?: string): GymStatus {
+    if (kycStatus === 'approved') return 'active';
+    if (kycStatus === 'rejected') return 'rejected';
+    if (currentStatus === 'active') return 'pending';
+    return (currentStatus as GymStatus) || 'pending';
+  }
 
   async myGym(ownerId: string) {
     const row = await this.safeGymQuery('g').where('g."ownerId" = :ownerId', { ownerId }).getRawOne();
@@ -415,9 +448,8 @@ class GymsService {
     const subMap = new Map<string, SubscriptionEntity>(subs.map((s): [string, SubscriptionEntity] => [s.id, s]));
     const userMap = new Map<string, UserEntity>(users.map((u): [string, UserEntity] => [u.id, u]));
     const ratePerDay = Number((gym as any).ratePerDay ?? 50);
-    const commissionRate = Number(gym.commissionRate ?? 15) / 100;
-    const gymShare = ratePerDay * (1 - commissionRate);
-    const adminShare = ratePerDay * commissionRate;
+    const gymShare = ratePerDay;
+    const adminShare = 0;
     const enriched = data.map(c => {
       const sub = subMap.get(c.subscriptionId);
       const user = userMap.get(c.userId);
@@ -431,7 +463,7 @@ class GymsService {
         adminEarns: c.status === 'success' ? adminShare : 0,
       };
     });
-    return { data: enriched, total, page: p, limit: l, pages: Math.ceil(total / l), gym: { name: gym.name, ratePerDay, commissionRate: gym.commissionRate } };
+    return { data: enriched, total, page: p, limit: l, pages: Math.ceil(total / l), gym: { name: gym.name, ratePerDay, commissionRate: 0, payoutMode: 'fixed_visit_payout' } };
   }
 
   async myTodayStats(ownerId: string) {
@@ -449,10 +481,86 @@ class GymsService {
     return { count: recent.length, recent };
   }
 
-  async list(filter: { city?: string; status?: string; kycStatus?: string; search?: string; tier?: string; category?: string } = {}, page: any = 1, limit: any = 20) {
-    const qb = this.safeGymQuery('g');
+  async myReport(ownerId: string, from?: string, to?: string) {
+    const gym = await this.myGym(ownerId) as any;
+    if (!gym) {
+      return { totalCheckins: 0, uniqueMembers: 0, peakHour: '--', revenueShare: 0, dailyCheckins: [], topMembers: [] };
+    }
+    const end = to ? new Date(to) : new Date();
+    end.setHours(23, 59, 59, 999);
+    const start = from ? new Date(from) : new Date(end);
+    if (!from) start.setDate(start.getDate() - 29);
+    start.setHours(0, 0, 0, 0);
+
+    const rows = await this.checkins.find({
+      where: { gymId: gym.id, status: 'success', checkinTime: Between(start, end) },
+      order: { checkinTime: 'ASC' },
+    });
+    const userIds = [...new Set(rows.map((row) => row.userId).filter(Boolean))];
+    const subIds = [...new Set(rows.map((row) => row.subscriptionId).filter(Boolean))];
+    const [users, subs] = await Promise.all([
+      userIds.length ? this.users.find({ where: { id: In(userIds) } }) : [],
+      subIds.length ? this.subs.find({ where: { id: In(subIds) } }) : [],
+    ]);
+    const userMap = new Map<string, UserEntity>(users.map((u): [string, UserEntity] => [u.id, u]));
+    const subMap = new Map<string, SubscriptionEntity>(subs.map((s): [string, SubscriptionEntity] => [s.id, s]));
+    const daily = new Map<string, number>();
+    const hourly = new Map<number, number>();
+    const members = new Map<string, { id: string; name: string; visits: number; plan: string; lastVisit: string }>();
+    for (const row of rows) {
+      const date = new Date(row.checkinTime);
+      const key = date.toISOString().slice(0, 10);
+      daily.set(key, (daily.get(key) || 0) + 1);
+      hourly.set(date.getHours(), (hourly.get(date.getHours()) || 0) + 1);
+      const user = userMap.get(row.userId);
+      const sub = subMap.get(row.subscriptionId);
+      const member = members.get(row.userId) || {
+        id: row.userId,
+        name: user?.name || user?.phone || user?.email || `Member ${String(row.userId).slice(0, 6)}`,
+        visits: 0,
+        plan: sub?.planType || 'Membership',
+        lastVisit: '',
+      };
+      member.visits += 1;
+      member.lastVisit = date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+      members.set(row.userId, member);
+    }
+    const dailyCheckins = Array.from(daily.entries()).map(([day, count]) => ({
+      day: new Date(day).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+      count,
+    }));
+    const peak = Array.from(hourly.entries()).sort((a, b) => b[1] - a[1])[0]?.[0];
+    const peakHour = peak === undefined ? '--' : `${String(peak).padStart(2, '0')}:00`;
+    const ratePerDay = Number((gym as any).ratePerDay ?? 50);
+    return {
+      totalCheckins: rows.length,
+      uniqueMembers: userIds.length,
+      peakHour,
+      revenueShare: Math.round(rows.length * ratePerDay),
+      dailyCheckins,
+      topMembers: Array.from(members.values()).sort((a, b) => b.visits - a.visits).slice(0, 10),
+    };
+  }
+
+  private validCoordinate(lat: any, lng: any) {
+    const parsedLat = Number(lat);
+    const parsedLng = Number(lng);
+    return Number.isFinite(parsedLat) && Number.isFinite(parsedLng)
+      && parsedLat >= -90 && parsedLat <= 90 && parsedLng >= -180 && parsedLng <= 180
+      ? { lat: parsedLat, lng: parsedLng }
+      : null;
+  }
+
+  async list(
+    filter: { city?: string; status?: string; kycStatus?: string; search?: string; tier?: string; category?: string; lat?: string; lng?: string; sort?: string } = {},
+    page: any = 1,
+    limit: any = 20,
+    options: { includeSensitive?: boolean; publicOnly?: boolean } = {},
+  ) {
+    const qb = this.safeGymQuery('g', !!options.includeSensitive);
     if (filter.city) qb.andWhere('g.city = :city', { city: filter.city });
     if (filter.status) qb.andWhere('g.status = :status', { status: filter.status });
+    else if (options.publicOnly !== false) qb.andWhere('g.status = :status', { status: 'active' });
     if (filter.kycStatus) qb.andWhere('g."kycStatus" = :kycStatus', { kycStatus: filter.kycStatus });
     if (filter.search) qb.andWhere('g.name ILIKE :search', { search: `%${filter.search}%` });
     if (filter.tier) {
@@ -466,10 +574,17 @@ class GymsService {
       qb.andWhere('g.tier = :tier', { tier: tierMap[filter.tier.toLowerCase()] ?? filter.tier.toLowerCase() });
     }
     if (filter.category) qb.andWhere(':category = ANY(g.categories)', { category: filter.category });
+    const location = this.validCoordinate(filter.lat, filter.lng);
+    if (location) {
+      qb.addSelect(
+        `(6371 * acos(least(1, greatest(-1, cos(radians(:lat)) * cos(radians(g.lat)) * cos(radians(g.lng) - radians(:lng)) + sin(radians(:lat)) * sin(radians(g.lat))))))`,
+        'distanceKm',
+      ).setParameters(location);
+    }
     const { skip, take, page: p, limit: l } = paginate(page, limit);
-    const orderColumn = filter.kycStatus ? 'g.updatedAt' : 'g.rating';
+    const orderColumn = location && filter.sort === 'nearest' ? '"distanceKm"' : (filter.kycStatus ? 'g.updatedAt' : 'g.rating');
     const [data, total] = await Promise.all([
-      qb.clone().orderBy(orderColumn, 'DESC').skip(skip).take(take).getRawMany(),
+      qb.clone().orderBy(orderColumn, orderColumn === '"distanceKm"' ? 'ASC' : 'DESC').skip(skip).take(take).getRawMany(),
       qb.clone().getCount(),
     ]);
     return paginatedResponse(data.map((row) => this.normalizeGym(row)), total, p, l);
@@ -478,6 +593,10 @@ class GymsService {
   async get(id: string) {
     const row = await this.safeGymQuery('g').where('g.id = :id', { id }).getRawOne();
     return this.attachSchedule(row);
+  }
+
+  async adminList(filter: { city?: string; status?: string; kycStatus?: string; search?: string; tier?: string; category?: string } = {}, page: any = 1, limit: any = 20) {
+    return this.list(filter, page, limit, { includeSensitive: true, publicOnly: false });
   }
 
   create(data: Partial<GymEntity>) { return this.repo.save(this.repo.create(this.sanitizeGymPatch(data, true))); }
@@ -558,8 +677,44 @@ class GymsService {
     return this.get(id);
   }
 
+  async reviewKycDocument(id: string, type: string, body: { status: 'approved' | 'rejected'; reason?: string }, user: any) {
+    const gym = await this.repo.findOne({ where: { id } });
+    if (!gym) throw new NotFoundException('Gym not found');
+    if (!this.kycSchemas[type]) throw new BadRequestException('Invalid KYC type');
+    if (!['approved', 'rejected'].includes(body?.status)) throw new BadRequestException('Status must be approved or rejected');
+    const docs = [...(gym.kycDocuments || [])];
+    const index = docs.findIndex((doc: any) => doc.type === type);
+    if (index < 0) throw new NotFoundException('KYC document not submitted');
+    docs[index] = {
+      ...docs[index],
+      status: body.status,
+      reviewedAt: new Date().toISOString(),
+      reviewedBy: user?.userId || null,
+      reviewNote: body.status === 'rejected' ? (body.reason || 'Rejected by admin') : null,
+    };
+    const kycStatus = this.recomputeKycStatus(docs);
+    const kycPhotos = kycStatus === 'approved' ? this.kycPhotoUrls(docs) : [];
+    const existingPhotos = Array.isArray(gym.photos) ? gym.photos.filter(Boolean) : [];
+    const photos = kycStatus === 'approved' ? [...new Set([...existingPhotos, ...kycPhotos])] : existingPhotos;
+    await this.repo.update(id, {
+      status: this.statusForKyc(kycStatus, gym.status),
+      kycStatus,
+      kycDocuments: docs,
+      kycReviewNote: kycStatus === 'rejected' ? (body.reason || 'One or more KYC documents were rejected') : null,
+      coverPhoto: kycStatus === 'approved' ? (gym.coverPhoto || photos[0] || null) : gym.coverPhoto,
+      photos,
+    });
+    return this.getKycStatus(id);
+  }
+
   async suspend(id: string) {
-    await this.repo.update(id, { status: 'suspended' as GymStatus });
+    return this.setStatus(id, 'suspended');
+  }
+
+  async setStatus(id: string, status: GymStatus) {
+    const allowedStatuses: GymStatus[] = ['pending', 'active', 'suspended', 'rejected', 'inactive'];
+    if (!allowedStatuses.includes(status)) throw new BadRequestException('Invalid gym status');
+    await this.repo.update(id, { status });
     return this.get(id);
   }
 
@@ -591,7 +746,8 @@ class GymsService {
   }
 
   async getKycStatus(gymId: string) {
-    const gym = await this.get(gymId) as any;
+    const row = await this.safeGymQuery('g', true).where('g.id = :id', { id: gymId }).getRawOne();
+    const gym = await this.attachSchedule(row) as any;
     return { kycStatus: gym?.kycStatus || 'not_started', kycReviewNote: gym?.kycReviewNote || null, kycDocuments: gym?.kycDocuments || [], schemas: this.kycSchemas };
   }
 
@@ -672,6 +828,11 @@ class GymsController {
   @Get('my-checkins/today') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('gym_owner', 'gym_staff')
   myTodayStats(@Req() req: any) { return this.svc.myTodayStats(req.user.userId); }
 
+  @Get('my-report') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('gym_owner', 'gym_staff')
+  myReport(@Req() req: any, @Query('from') from?: string, @Query('to') to?: string) {
+    return this.svc.myReport(req.user.userId, from, to);
+  }
+
   @Put('my-gym/amenities') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('gym_owner', 'gym_staff')
   updateMyAmenities(@Req() req: any, @Body() body: { amenities: string[] }) {
     return this.svc.updateMyAmenities(req.user.userId, body.amenities || []);
@@ -684,10 +845,27 @@ class GymsController {
     @Query('search') search?: string,
     @Query('tier') tier?: string,
     @Query('category') category?: string,
+    @Query('lat') lat?: string,
+    @Query('lng') lng?: string,
+    @Query('sort') sort?: string,
     @Query('page') page = 1,
     @Query('limit') limit = 20,
   ) {
-    return this.svc.list({ city, status, kycStatus, search, tier, category }, +page, +limit);
+    return this.svc.list({ city, status, kycStatus, search, tier, category, lat, lng, sort }, +page, +limit, { publicOnly: true });
+  }
+
+  @Get('admin/list') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('super_admin')
+  adminList(
+    @Query('city') city?: string,
+    @Query('status') status?: string,
+    @Query('kycStatus') kycStatus?: string,
+    @Query('search') search?: string,
+    @Query('tier') tier?: string,
+    @Query('category') category?: string,
+    @Query('page') page = 1,
+    @Query('limit') limit = 20,
+  ) {
+    return this.svc.adminList({ city, status, kycStatus, search, tier, category }, +page, +limit);
   }
   @Get('recommended') @UseGuards(JwtAuthGuard)
   recommended(@Req() req: any) { return this.svc.getRecommended(req.user.userId); }
@@ -708,6 +886,12 @@ class GymsController {
   @Post(':id/suspend') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('super_admin')
   suspend(@Param('id') id: string) { return this.svc.suspend(id); }
 
+  @Post(':id/activate') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('super_admin')
+  activate(@Param('id') id: string) { return this.svc.setStatus(id, 'active'); }
+
+  @Post(':id/deactivate') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('super_admin')
+  deactivate(@Param('id') id: string) { return this.svc.setStatus(id, 'inactive'); }
+
   @Post(':id/tier') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('super_admin')
   @Put(':id/tier')
   setTier(@Param('id') id: string, @Body() b: { tier: string; commissionRate: number }) {
@@ -719,6 +903,11 @@ class GymsController {
 
   @Post(':id/kyc-documents') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('gym_owner', 'gym_staff')
   submitKyc(@Param('id') id: string, @Body() body: any, @Req() req: any) { return this.svc.submitKycDocument(id, body, req.user); }
+
+  @Patch(':id/kyc-documents/:type/review') @UseGuards(JwtAuthGuard, RolesGuard) @Roles('super_admin')
+  reviewKyc(@Param('id') id: string, @Param('type') type: string, @Body() body: any, @Req() req: any) {
+    return this.svc.reviewKycDocument(id, type, body, req.user);
+  }
 }
 
 @Module({

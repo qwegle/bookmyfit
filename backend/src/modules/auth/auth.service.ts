@@ -101,7 +101,7 @@ export class AuthService {
 
   async registerGym(data: {
     email: string; password: string; name: string;
-    gymName: string; city: string; area: string; address: string; phone?: string;
+    gymName: string; city: string; area: string; address: string; phone?: string; lat?: number; lng?: number;
   }) {
     const existing = await this.users.findOne({ where: { email: data.email } });
     if (existing) throw new BadRequestException('An account with this email already exists');
@@ -112,7 +112,9 @@ export class AuthService {
     const gym = await this.gyms.save(
       this.gyms.create({
         name: data.gymName, city: data.city, area: data.area,
-        address: data.address, lat: 0, lng: 0,
+        address: data.address,
+        lat: Number.isFinite(Number(data.lat)) ? Number(data.lat) : 0,
+        lng: Number.isFinite(Number(data.lng)) ? Number(data.lng) : 0,
         status: 'pending', ownerId: user.id, kycStatus: 'not_started',
       }),
     );

@@ -1,6 +1,6 @@
 import { Module, Controller, Get, Post, Body, Param, Query, Injectable, UseGuards, Req } from '@nestjs/common';
 import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Between, Repository } from 'typeorm';
 import { paginate, paginatedResponse } from '../../common/pagination.helper';
 import { ApiTags } from '@nestjs/swagger';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -8,9 +8,11 @@ import { SettlementEntity } from '../../database/entities/settlement.entity';
 import { GymEntity } from '../../database/entities/gym.entity';
 import { CheckinEntity } from '../../database/entities/checkin.entity';
 import { SubscriptionEntity } from '../../database/entities/subscription.entity';
+import { AppConfigEntity } from '../../database/entities/app-config.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/guards/roles.decorator';
+import { CommissionConfig, PLATFORM_PRICING_CONFIG_KEY, serviceCommission } from '../../common/commission-config';
 
 /**
  * SettlementEngine - implements the revenue-bucket logic from the LLR:
@@ -25,6 +27,7 @@ class SettlementService {
     @InjectRepository(GymEntity) private readonly gyms: Repository<GymEntity>,
     @InjectRepository(CheckinEntity) private readonly checkins: Repository<CheckinEntity>,
     @InjectRepository(SubscriptionEntity) private readonly subs: Repository<SubscriptionEntity>,
+    @InjectRepository(AppConfigEntity) private readonly configs: Repository<AppConfigEntity>,
   ) {}
 
   async myGymSettlements(ownerId: string) {
@@ -34,9 +37,26 @@ class SettlementService {
     const mapped = rows.map((s) => this.mapSettlement(s, gym));
     const currentMonth = new Date().toISOString().slice(0, 7);
     const currentRow = mapped.find((s) => s.period === currentMonth);
+    const projected = currentRow ? null : await this.currentProjection(gym);
     return {
-      current: currentRow ? this.currentDto(currentRow) : this.emptyCurrent(),
+      current: currentRow ? this.currentDto(currentRow) : projected,
       history: mapped.filter((s) => s.period !== currentMonth),
+    };
+  }
+
+  private async currentProjection(gym: GymEntity) {
+    const now = new Date();
+    const from = new Date(now.getFullYear(), now.getMonth(), 1);
+    const to = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const rows = await this.checkins.find({ where: { gymId: gym.id, status: 'success', checkinTime: Between(from, to) } });
+    const ratePerDay = Number((gym as any).ratePerDay || 0);
+    const projectedPayout = Math.round(rows.length * ratePerDay);
+    return {
+      ...this.emptyCurrent(),
+      grossRevenue: projectedPayout,
+      netPayout: projectedPayout,
+      status: rows.length ? 'projected' : 'not_generated',
+      multiGymPool: projectedPayout,
     };
   }
 
@@ -57,7 +77,7 @@ class SettlementService {
       grossRevenue: Number(s.totalRevenue || 0),
       commission: Number(s.commission || 0),
       netPayout: Number(s.netPayout || 0),
-      commissionRate: Number(gym?.commissionRate || 0),
+      commissionRate: 0,
     };
   }
 
@@ -87,6 +107,14 @@ class SettlementService {
     };
   }
 
+  private commissionFromPaidAmount(paidAmount: number, commission: CommissionConfig) {
+    const paid = Math.max(0, Number(paidAmount) || 0);
+    const value = Math.max(0, Number(commission?.value) || 0);
+    if (!paid || !value) return 0;
+    if (commission?.mode === 'fixed') return Math.min(paid, value);
+    return paid * (value / (100 + value));
+  }
+
   /** Runs on the 1st of each month at 2am to compute previous month's settlements */
   @Cron(CronExpression.EVERY_1ST_DAY_OF_MONTH_AT_MIDNIGHT)
   async monthlySettlementJob() {
@@ -101,6 +129,9 @@ class SettlementService {
     const from = new Date(y, m - 1, 1);
     const to = new Date(y, m, 1);
     const gyms = await this.gyms.find({ where: { status: 'active' } });
+    const configRow = await this.configs.findOne({ where: { key: PLATFORM_PRICING_CONFIG_KEY } });
+    const sameGymCommissionConfig = serviceCommission(configRow?.value, 'same_gym');
+    const dayPassCommissionConfig = serviceCommission(configRow?.value, 'day_pass');
 
     const allCheckins = await this.checkins
       .createQueryBuilder('c')
@@ -140,11 +171,10 @@ class SettlementService {
         `${c.userId}_${new Date(c.checkinTime).toISOString().slice(0, 10)}`
       ));
       const billableDays = billableDayKeys.size;
-      const commissionRate = Number(gym.commissionRate) / 100;
       const multiGymGrossRevenue = totalMultiGymBillableDays > 0
         ? totalMultiGymRevenue * (billableDays / totalMultiGymBillableDays)
         : 0;
-      const multiGymCommission = multiGymGrossRevenue * commissionRate;
+      const multiGymCommission = 0;
       const multiGymPayout = multiGymGrossRevenue - multiGymCommission;
 
       // --- Single-gym and day-pass subscriptions: use actual paid subscription amount for this gym ---
@@ -152,7 +182,7 @@ class SettlementService {
       const sameGymRevenue = gymPaidSubs.filter((s) => s.planType === 'same_gym').reduce((sum, s) => sum + Number(s.amountPaid || 0), 0);
       const dayPassRevenue = gymPaidSubs.filter((s) => s.planType === 'day_pass').reduce((sum, s) => sum + Number(s.amountPaid || 0), 0);
       const gymSpecificRevenue = sameGymRevenue + dayPassRevenue;
-      const gymSpecificCommission = gymSpecificRevenue * commissionRate;
+      const gymSpecificCommission = this.commissionFromPaidAmount(sameGymRevenue, sameGymCommissionConfig) + this.commissionFromPaidAmount(dayPassRevenue, dayPassCommissionConfig);
       const gymSpecificPayout = gymSpecificRevenue - gymSpecificCommission;
 
       const totalRevenue = multiGymGrossRevenue + gymSpecificRevenue;
@@ -236,7 +266,7 @@ class SettlementController {
 }
 
 @Module({
-  imports: [TypeOrmModule.forFeature([SettlementEntity, GymEntity, CheckinEntity, SubscriptionEntity])],
+  imports: [TypeOrmModule.forFeature([SettlementEntity, GymEntity, CheckinEntity, SubscriptionEntity, AppConfigEntity])],
   controllers: [SettlementController],
   providers: [SettlementService],
   exports: [SettlementService],

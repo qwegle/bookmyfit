@@ -1,37 +1,52 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import Shell from '../../components/Shell';
-import { CheckCircle, Clock, XCircle, PauseCircle, Star, ChevronDown, AlertTriangle } from 'lucide-react';
+import { AlertTriangle, CheckCircle, Clock, Edit3, Eye, PauseCircle, Power, PowerOff, Star, X } from 'lucide-react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/Toast';
 import Pagination from '../../components/Pagination';
 
 type Gym = {
-  id: string; name: string; city: string; area?: string;
-  tier: string; status: string; rating: number; commissionRate: number;
+  id: string;
+  name: string;
+  city: string;
+  area?: string;
+  address?: string;
+  description?: string;
+  pinCode?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+  phone?: string;
+  email?: string;
+  website?: string;
+  tier: string;
+  status: string;
+  rating: number;
+  lat?: number;
+  lng?: number;
+  ratePerDay?: number;
+  dayPassPrice?: number | null;
+  capacity?: number;
 };
 
-const TIERS = ['Standard', 'Premium', 'Corporate Exclusive'];
-const STATUS_FILTERS = ['all', 'active', 'pending', 'suspended', 'rejected'] as const;
+const STATUS_FILTERS = ['all', 'active', 'pending', 'suspended', 'inactive', 'rejected'] as const;
+const TIERS = [
+  { value: 'standard', label: 'Standard' },
+  { value: 'premium', label: 'Premium' },
+  { value: 'corporate_exclusive', label: 'Corporate Exclusive' },
+];
 
-function TierBadge({ tier }: { tier: string }) {
-  const styles: Record<string, React.CSSProperties> = {
-    'Standard': { background: 'rgba(100,160,255,0.15)', color: '#64A0FF' },
-    'Premium': { background: 'rgba(255,180,0,0.15)', color: '#FFB400' },
-    'Corporate Exclusive': { background: 'rgba(180,120,255,0.15)', color: '#B478FF' },
-  };
-  const s = styles[tier] || styles['Standard'];
-  return (
-    <span style={{ ...s, padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600 }}>
-      {tier}
-    </span>
-  );
+function titleCase(value?: string) {
+  return String(value || '').replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase()) || '-';
 }
 
 function StatusBadge({ status }: { status: string }) {
   const cls: Record<string, string> = {
-    active: 'badge-active', pending: 'badge-pending',
-    suspended: 'badge-danger', rejected: 'badge-danger',
+    active: 'badge-active',
+    pending: 'badge-pending',
+    suspended: 'badge-danger',
+    inactive: 'badge-danger',
+    rejected: 'badge-danger',
   };
   return <span className={cls[status] || 'badge-pending'}>{status}</span>;
 }
@@ -48,6 +63,10 @@ function SkeletonRow() {
   );
 }
 
+function fieldValue(value: any) {
+  return value === null || value === undefined ? '' : String(value);
+}
+
 export default function GymsPage() {
   const { toast } = useToast();
   const [gyms, setGyms] = useState<Gym[]>([]);
@@ -55,20 +74,25 @@ export default function GymsPage() {
   const [q, setQ] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<typeof STATUS_FILTERS[number]>('all');
-  const [tierDropdown, setTierDropdown] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(20);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(1);
+  const [selectedGym, setSelectedGym] = useState<Gym | null>(null);
+  const [editingGym, setEditingGym] = useState<Gym | null>(null);
+  const [form, setForm] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    setLoading(true); setError(null);
+    setLoading(true);
+    setError(null);
     try {
-      const res = await api.get<any>(`/gyms?page=${page}&limit=${limit}${q ? `&search=${encodeURIComponent(q)}` : ''}`);
-      const rows: Gym[] = Array.isArray(res) ? res : (res as any)?.data ?? [];
+      const status = statusFilter === 'all' ? '' : `&status=${statusFilter}`;
+      const res = await api.get<any>(`/gyms/admin/list?page=${page}&limit=${limit}${q ? `&search=${encodeURIComponent(q)}` : ''}${status}`);
+      const rows: Gym[] = Array.isArray(res) ? res : res?.data ?? [];
       setGyms(rows);
-      setTotal((res as any)?.total ?? rows.length);
-      setPages((res as any)?.pages ?? 1);
+      setTotal(res?.total ?? rows.length);
+      setPages(res?.pages ?? 1);
     } catch {
       setGyms([]);
       setTotal(0);
@@ -77,50 +101,85 @@ export default function GymsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, limit, q]);
+  }, [page, limit, q, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [q]);
+  useEffect(() => { setPage(1); }, [q, statusFilter]);
 
-  const approve = async (id: string) => {
-    try {
-      await api.post(`/gyms/${id}/approve`);
-      setGyms((prev) => prev.map((g) => g.id === id ? { ...g, status: 'active' } : g));
-      toast('Gym approved');
-    } catch (e: any) {
-      toast(e.message || 'Failed to approve gym', 'error');
-    }
-  };
-  const suspend = async (id: string) => {
-    try {
-      await api.post(`/gyms/${id}/suspend`);
-      setGyms((prev) => prev.map((g) => g.id === id ? { ...g, status: 'suspended' } : g));
-      toast('Gym suspended');
-    } catch (e: any) {
-      toast(e.message || 'Failed to suspend gym', 'error');
-    }
-  };
-  const setTier = async (gym: Gym, tier: string) => {
-    try {
-      await api.put(`/gyms/${gym.id}/tier`, { tier, commissionRate: gym.commissionRate ?? 15 });
-      setGyms((prev) => prev.map((g) => g.id === gym.id ? { ...g, tier } : g));
-      setTierDropdown(null);
-      toast('Gym tier updated');
-    } catch (e: any) {
-      toast(e.message || 'Failed to update gym tier', 'error');
-    }
+  const openEdit = (gym: Gym) => {
+    setEditingGym(gym);
+    setForm({
+      name: fieldValue(gym.name),
+      description: fieldValue(gym.description),
+      city: fieldValue(gym.city),
+      area: fieldValue(gym.area),
+      address: fieldValue(gym.address),
+      pinCode: fieldValue(gym.pinCode),
+      contactPhone: fieldValue(gym.contactPhone || gym.phone),
+      contactEmail: fieldValue(gym.contactEmail || gym.email),
+      website: fieldValue(gym.website),
+      tier: fieldValue(gym.tier || 'standard'),
+      status: fieldValue(gym.status || 'pending'),
+      lat: fieldValue(gym.lat),
+      lng: fieldValue(gym.lng),
+      ratePerDay: fieldValue(gym.ratePerDay),
+      dayPassPrice: fieldValue(gym.dayPassPrice),
+      capacity: fieldValue(gym.capacity),
+    });
   };
 
-  const filtered = gyms.filter((g) => {
-    const matchStatus = statusFilter === 'all' || g.status === statusFilter;
-    return matchStatus;
-  });
+  const patchLocal = (id: string, patch: Partial<Gym>) => {
+    setGyms((prev) => prev.map((g) => g.id === id ? { ...g, ...patch } : g));
+  };
+
+  const changeStatus = async (gym: Gym, action: 'approve' | 'activate' | 'suspend' | 'deactivate') => {
+    try {
+      const updated = await api.post<Gym>(`/gyms/${gym.id}/${action}`);
+      patchLocal(gym.id, { status: updated?.status || (action === 'deactivate' ? 'inactive' : action === 'suspend' ? 'suspended' : 'active') });
+      toast(action === 'deactivate' ? 'Gym deactivated' : action === 'suspend' ? 'Gym suspended' : 'Gym activated');
+    } catch (e: any) {
+      toast(e.message || 'Status update failed', 'error');
+    }
+  };
+
+  const saveEdit = async () => {
+    if (!editingGym) return;
+    setSaving(true);
+    try {
+      const body: any = {
+        name: form.name,
+        description: form.description,
+        city: form.city,
+        area: form.area,
+        address: form.address,
+        pinCode: form.pinCode,
+        contactPhone: form.contactPhone,
+        contactEmail: form.contactEmail,
+        website: form.website,
+        tier: form.tier,
+        status: form.status,
+        lat: form.lat,
+        lng: form.lng,
+        ratePerDay: form.ratePerDay,
+        dayPassPrice: form.dayPassPrice,
+        capacity: form.capacity,
+      };
+      const updated = await api.put<Gym>(`/gyms/${editingGym.id}`, body);
+      patchLocal(editingGym.id, updated);
+      setEditingGym(null);
+      toast('Gym details updated');
+    } catch (e: any) {
+      toast(e.message || 'Failed to save gym details', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const stats = {
     active: gyms.filter((g) => g.status === 'active').length,
     pending: gyms.filter((g) => g.status === 'pending').length,
     suspended: gyms.filter((g) => g.status === 'suspended').length,
-    rejected: gyms.filter((g) => g.status === 'rejected').length,
+    inactive: gyms.filter((g) => g.status === 'inactive').length,
   };
 
   return (
@@ -131,12 +190,13 @@ export default function GymsPage() {
           <AlertTriangle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} /> {error}
         </div>
       )}
+
       <div className="grid grid-cols-4 gap-4 mb-8">
         {[
           { label: 'Active Gyms', value: stats.active, icon: CheckCircle, color: 'var(--accent)' },
           { label: 'Pending Review', value: stats.pending, icon: Clock, color: '#FFB400' },
           { label: 'Suspended', value: stats.suspended, icon: PauseCircle, color: '#FF8C00' },
-          { label: 'Rejected', value: stats.rejected, icon: XCircle, color: '#FF3C3C' },
+          { label: 'Inactive', value: stats.inactive, icon: PowerOff, color: '#FF3C3C' },
         ].map((s) => {
           const Icon = s.icon;
           return (
@@ -152,11 +212,10 @@ export default function GymsPage() {
       </div>
 
       <div className="flex items-center gap-3 mb-4">
-        <input value={q} onChange={(e) => setQ(e.target.value)} className="glass-input flex-1"
-          placeholder="Search gyms by name or city..." />
+        <input value={q} onChange={(e) => setQ(e.target.value)} className="glass-input flex-1" placeholder="Search gyms by name or city..." />
       </div>
 
-      <div className="flex gap-2 mb-5">
+      <div className="flex gap-2 mb-5 flex-wrap">
         {STATUS_FILTERS.map((f) => (
           <button key={f} onClick={() => setStatusFilter(f)}
             className="btn text-xs capitalize"
@@ -171,57 +230,37 @@ export default function GymsPage() {
         ))}
       </div>
 
-      <div className="glass overflow-hidden" style={{ position: 'relative' }}>
+      <div className="glass" style={{ position: 'relative', overflowX: 'auto', overflowY: 'visible' }}>
         <table className="glass-table">
           <thead>
             <tr>
-              <th>Gym Name</th><th>City</th><th>Tier</th><th>Status</th>
-              <th>Commission %</th><th>Rating</th><th>Actions</th>
+              <th>Gym Name</th><th>Location</th><th>Tier</th><th>Status</th>
+              <th>Coordinates</th><th>Rating</th><th>Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading
               ? Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)
-              : filtered.length === 0
+              : gyms.length === 0
                 ? <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--t2)', padding: '40px 0' }}>No gyms found</td></tr>
-                : filtered.map((g) => (
-                  <tr key={g.id} style={{ position: 'relative' }}>
+                : gyms.map((g) => (
+                  <tr key={g.id}>
                     <td className="font-semibold" style={{ color: '#fff' }}>{g.name}</td>
                     <td>{g.city}{g.area ? `, ${g.area}` : ''}</td>
-                    <td><TierBadge tier={g.tier} /></td>
+                    <td>{titleCase(g.tier)}</td>
                     <td><StatusBadge status={g.status} /></td>
-                    <td style={{ color: 'var(--accent)', fontWeight: 600 }}>{g.commissionRate ?? 15}%</td>
+                    <td style={{ color: g.lat && g.lng ? 'var(--t2)' : '#FFB400', fontSize: 12 }}>
+                      {g.lat && g.lng ? `${Number(g.lat).toFixed(4)}, ${Number(g.lng).toFixed(4)}` : 'Needs location'}
+                    </td>
                     <td><Star size={12} color="#FFB400" fill="#FFB400" style={{ display:'inline', verticalAlign:'middle', marginRight:3 }} />{g.rating ?? '--'}</td>
                     <td>
-                      <div className="flex items-center gap-2">
-                        {g.status === 'pending' && (
-                          <button onClick={() => approve(g.id)}
-                            className="btn btn-primary text-xs" style={{ padding: '4px 10px', fontSize: 11 }}>
-                            Approve
-                          </button>
-                        )}
-                        {g.status === 'active' && (
-                          <button onClick={() => suspend(g.id)}
-                            className="btn text-xs" style={{ padding: '4px 10px', fontSize: 11, background: 'rgba(255,60,60,0.15)', color: '#FF3C3C', border: '1px solid rgba(255,60,60,0.3)' }}>
-                            Suspend
-                          </button>
-                        )}
-                        <div style={{ position: 'relative' }}>
-                          <button onClick={() => setTierDropdown(tierDropdown === g.id ? null : g.id)}
-                            className="btn btn-ghost text-xs" style={{ padding: '4px 10px', fontSize: 11 }}>
-                            Set Tier <ChevronDown size={12} style={{ display:'inline', verticalAlign:'middle' }} />
-                          </button>
-                          {tierDropdown === g.id && (
-                            <div className="glass" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 50, minWidth: 160, padding: '6px 0' }}>
-                              {TIERS.map((t) => (
-                                <button key={t} onClick={() => setTier(g, t)}
-                                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 14px', fontSize: 12, color: g.tier === t ? 'var(--accent)' : 'var(--t)', background: 'transparent', cursor: 'pointer' }}>
-                                  {t} {g.tier === t && <span style={{ color:'var(--accent)' }}>&#10003;</span>}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button onClick={() => setSelectedGym(g)} className="btn btn-ghost text-xs" style={{ padding: '4px 10px', fontSize: 11 }}><Eye size={12} /> View</button>
+                        <button onClick={() => openEdit(g)} className="btn btn-ghost text-xs" style={{ padding: '4px 10px', fontSize: 11 }}><Edit3 size={12} /> Edit</button>
+                        {g.status === 'pending' && <button onClick={() => changeStatus(g, 'approve')} className="btn btn-primary text-xs" style={{ padding: '4px 10px', fontSize: 11 }}>Approve</button>}
+                        {g.status !== 'active' && <button onClick={() => changeStatus(g, 'activate')} className="btn text-xs" style={{ padding: '4px 10px', fontSize: 11, background: 'rgba(61,255,84,0.15)', color: 'var(--accent)', border: '1px solid rgba(61,255,84,0.3)' }}><Power size={12} /> Activate</button>}
+                        {g.status === 'active' && <button onClick={() => changeStatus(g, 'suspend')} className="btn text-xs" style={{ padding: '4px 10px', fontSize: 11, background: 'rgba(255,180,0,0.15)', color: '#FFB400', border: '1px solid rgba(255,180,0,0.3)' }}>Suspend</button>}
+                        {g.status !== 'inactive' && <button onClick={() => changeStatus(g, 'deactivate')} className="btn text-xs" style={{ padding: '4px 10px', fontSize: 11, background: 'rgba(255,60,60,0.15)', color: '#FF3C3C', border: '1px solid rgba(255,60,60,0.3)' }}>Deactivate</button>}
                       </div>
                     </td>
                   </tr>
@@ -230,6 +269,84 @@ export default function GymsPage() {
         </table>
       </div>
       <Pagination page={page} pages={pages} total={total} limit={limit} onPage={setPage} onLimit={(l) => { setLimit(l); setPage(1); }} />
+
+      {selectedGym && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.72)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <div className="glass" style={{ width: 'min(680px, 96vw)', maxHeight: '86vh', overflowY: 'auto', padding: 28, borderRadius: 18 }}>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="serif text-xl">{selectedGym.name}</h3>
+              <button onClick={() => setSelectedGym(null)} className="btn btn-ghost text-xs"><X size={16} /></button>
+            </div>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              {[
+                ['Status', selectedGym.status],
+                ['Tier', titleCase(selectedGym.tier)],
+                ['City', selectedGym.city],
+                ['Area', selectedGym.area || '-'],
+                ['Address', selectedGym.address || '-'],
+                ['Phone', selectedGym.contactPhone || selectedGym.phone || '-'],
+                ['Email', selectedGym.contactEmail || selectedGym.email || '-'],
+                ['Website', selectedGym.website || '-'],
+                ['Coordinates', selectedGym.lat && selectedGym.lng ? `${selectedGym.lat}, ${selectedGym.lng}` : 'Not set'],
+                ['Multi-gym visit payout', selectedGym.ratePerDay ? `Rs ${selectedGym.ratePerDay}` : '-'],
+              ].map(([label, value]) => (
+                <div key={label} className="card p-3">
+                  <div className="kicker mb-1" style={{ color: 'var(--t3)' }}>{label}</div>
+                  <div style={{ color: 'var(--t)' }}>{value}</div>
+                </div>
+              ))}
+            </div>
+            {selectedGym.description && <p className="mt-4 text-sm" style={{ color: 'var(--t2)' }}>{selectedGym.description}</p>}
+          </div>
+        </div>
+      )}
+
+      {editingGym && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(0,0,0,0.72)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+          <div className="glass" style={{ width: 'min(860px, 96vw)', maxHeight: '86vh', overflowY: 'auto', padding: 28, borderRadius: 18 }}>
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="serif text-xl">Edit Gym</h3>
+              <button onClick={() => setEditingGym(null)} className="btn btn-ghost text-xs"><X size={16} /></button>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              {[
+                ['name', 'Name'], ['city', 'City'], ['area', 'Area'], ['pinCode', 'Pin Code'],
+                ['contactPhone', 'Phone'], ['contactEmail', 'Email'], ['website', 'Website'],
+                ['lat', 'Latitude'], ['lng', 'Longitude'], ['ratePerDay', 'Multi-gym Visit Payout'], ['dayPassPrice', 'Day Pass Price'], ['capacity', 'Capacity'],
+              ].map(([key, label]) => (
+                <div key={key}>
+                  <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--t2)' }}>{label}</label>
+                  <input className="glass-input w-full" value={form[key] || ''} onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))} />
+                </div>
+              ))}
+              <div>
+                <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--t2)' }}>Tier</label>
+                <select className="glass-input w-full" value={form.tier || 'standard'} onChange={(e) => setForm((f) => ({ ...f, tier: e.target.value }))}>
+                  {TIERS.map((tier) => <option key={tier.value} value={tier.value}>{tier.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--t2)' }}>Status</label>
+                <select className="glass-input w-full" value={form.status || 'pending'} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}>
+                  {STATUS_FILTERS.filter((s) => s !== 'all').map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--t2)' }}>Address</label>
+                <input className="glass-input w-full" value={form.address || ''} onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))} />
+              </div>
+              <div className="col-span-2">
+                <label className="text-xs font-semibold block mb-1" style={{ color: 'var(--t2)' }}>Description</label>
+                <textarea className="glass-input w-full h-20 resize-none" value={form.description || ''} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button onClick={() => setEditingGym(null)} className="btn btn-ghost text-sm">Cancel</button>
+              <button onClick={saveEdit} disabled={saving} className="btn btn-primary text-sm">{saving ? 'Saving...' : 'Save Gym'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </Shell>
   );
 }

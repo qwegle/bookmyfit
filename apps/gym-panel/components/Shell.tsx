@@ -29,7 +29,7 @@ const NAV = [
   ]},
 ];
 
-type GymStatus = 'pending' | 'active' | 'suspended' | 'rejected';
+type GymStatus = 'pending' | 'active' | 'suspended' | 'rejected' | 'inactive';
 
 const STATUS_BANNERS: Record<string, { bg: string; border: string; text: string; msg: string }> = {
   pending: {
@@ -43,6 +43,10 @@ const STATUS_BANNERS: Record<string, { bg: string; border: string; text: string;
   rejected: {
     bg: 'rgba(255,100,100,0.07)', border: 'rgba(255,100,100,0.3)', text: '#FF6464',
     msg: 'Your gym registration was rejected. Please contact support or re-submit your KYC.',
+  },
+  inactive: {
+    bg: 'rgba(255,100,100,0.07)', border: 'rgba(255,100,100,0.3)', text: '#FF6464',
+    msg: 'Your gym is currently inactive and hidden from the member app. Please contact admin to reactivate it.',
   },
 };
 

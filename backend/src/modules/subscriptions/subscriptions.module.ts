@@ -40,25 +40,32 @@ class SubscriptionsService {
     private readonly cashfree: CashfreeService,
   ) {}
 
-  private amountWithCheckoutCommission(baseAmount: number, planType: 'day_pass' | 'same_gym' | 'multi_gym', config: any) {
+  private async platformPricingConfig() {
+    const record = await this.configRepo.findOne({ where: { key: PLATFORM_PRICING_CONFIG_KEY } });
+    return normalizePlatformPricingConfig(record?.value);
+  }
+
+  private amountWithCheckoutCommission(baseAmount: number, planType: 'day_pass' | 'same_gym', config: any) {
     return applyCheckoutCommission(baseAmount, serviceCommission(config, planType));
   }
 
   async getMultigymConfig() {
-    const record = await this.configRepo.findOne({ where: { key: PLATFORM_PRICING_CONFIG_KEY } });
-    return platformPricingResponse(record?.value);
+    return platformPricingResponse(await this.platformPricingConfig());
   }
 
   async setMultigymConfig(data: Partial<typeof DEFAULT_PLATFORM_PRICING_CONFIG>) {
     const row = await this.configRepo.findOne({ where: { key: PLATFORM_PRICING_CONFIG_KEY } });
     const current = normalizePlatformPricingConfig(row?.value);
+    const multiGym = { ...((data as any)?.multi_gym || {}) };
+    delete (multiGym as any).commission;
+    delete (multiGym as any).commissionSetting;
     const merged = normalizePlatformPricingConfig({
       ...current,
       ...data,
       globalCommission: (data as any)?.globalCommission || current.globalCommission,
       day_pass: { ...current.day_pass, ...((data as any)?.day_pass || {}) },
       same_gym: { ...current.same_gym, ...((data as any)?.same_gym || {}) },
-      multi_gym: { ...current.multi_gym, ...((data as any)?.multi_gym || {}) },
+      multi_gym: { ...current.multi_gym, ...multiGym },
       wellness: { ...current.wellness, ...((data as any)?.wellness || {}) },
       personal_training: { ...current.personal_training, ...((data as any)?.personal_training || {}) },
     });
@@ -67,7 +74,7 @@ class SubscriptionsService {
   }
 
   async plans() {
-    const config = await this.getMultigymConfig();
+    const config = await this.platformPricingConfig();
     return {
       day_pass: {
         planType: 'day_pass',
@@ -262,7 +269,7 @@ class SubscriptionsService {
       durationMonths = Math.max(1, Math.round((gymPlan.durationDays || 30) / 30));
     } else if (dto.planType === 'multi_gym') {
       const price = config.multi_gym?.basePrice || 1499;
-      amount = this.amountWithCheckoutCommission(price * (durationMonths || 1), 'multi_gym', config);
+      amount = Math.max(1, Math.round(price * (durationMonths || 1)));
     } else if (dto.planType === 'day_pass') {
       if (!dto.gymId) throw new BadRequestException('Select a gym before buying a 1-Day Pass');
       if (!uuidRe.test(dto.gymId)) throw new BadRequestException('Invalid gymId format');

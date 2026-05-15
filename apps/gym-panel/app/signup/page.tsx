@@ -10,7 +10,7 @@ export default function GymSignup() {
   const [step, setStep] = useState<1 | 2>(1);
   const [form, setForm] = useState({
     name: '', email: '', phone: '', password: '', confirmPassword: '',
-    gymName: '', city: CITIES[0], area: '', address: '',
+    gymName: '', city: CITIES[0], area: '', address: '', lat: '', lng: '',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -37,6 +37,8 @@ export default function GymSignup() {
         body: JSON.stringify({
           name: form.name, email: form.email, phone: form.phone, password: form.password,
           gymName: form.gymName, city: form.city, area: form.area, address: form.address,
+          lat: form.lat ? Number(form.lat) : undefined,
+          lng: form.lng ? Number(form.lng) : undefined,
         }),
       });
       const data = await res.json();
@@ -55,6 +57,21 @@ export default function GymSignup() {
     padding: '11px 14px', color: '#fff', fontSize: 13, outline: 'none', boxSizing: 'border-box',
   };
   const labelStyle: React.CSSProperties = { fontSize: 11, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.07em', fontWeight: 600 };
+
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      setError('Location is not available in this browser');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setForm((f) => ({ ...f, lat: String(pos.coords.latitude), lng: String(pos.coords.longitude) }));
+        setError('');
+      },
+      () => setError('Could not read current location. You can add latitude and longitude later from Profile.'),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
 
   if (done) return (
     <div className="min-h-screen flex items-center justify-center">
@@ -150,6 +167,19 @@ export default function GymSignup() {
               <label style={labelStyle}>Full Address</label>
               <input style={inputStyle} value={form.address} onChange={set('address')} placeholder="Street address, landmark" required />
             </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div>
+                <label style={labelStyle}>Latitude</label>
+                <input style={inputStyle} value={form.lat} onChange={set('lat')} placeholder="20.2961" />
+              </div>
+              <div>
+                <label style={labelStyle}>Longitude</label>
+                <input style={inputStyle} value={form.lng} onChange={set('lng')} placeholder="85.8245" />
+              </div>
+            </div>
+            <button type="button" className="btn btn-ghost text-xs justify-center" onClick={useCurrentLocation}>
+              Use current browser location
+            </button>
             <div style={{ background: 'rgba(255,180,0,0.06)', border: '1px solid rgba(255,180,0,0.2)', borderRadius: 10, padding: '12px 14px', fontSize: 12, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>
               ⚠️ After registration, complete <strong style={{ color: '#FFB400' }}>KYC verification</strong> in your dashboard. Your gym will go live only after admin approval.
             </div>

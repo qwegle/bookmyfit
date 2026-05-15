@@ -1,5 +1,5 @@
 export type CommissionMode = 'percent' | 'fixed';
-export type ServiceCommissionKey = 'day_pass' | 'same_gym' | 'multi_gym' | 'wellness' | 'personal_training';
+export type ServiceCommissionKey = 'day_pass' | 'same_gym' | 'wellness' | 'personal_training';
 
 export type CommissionConfig = {
   mode: CommissionMode;
@@ -24,7 +24,6 @@ export const DEFAULT_PLATFORM_PRICING_CONFIG: any = {
     basePrice: 1499,
     gymLimit: null,
     features: ['Unlimited gyms, unlimited visits', 'QR Check-in', 'Priority support', 'All gym tiers', 'PT session add-on eligible'],
-    commission: { useGlobal: true, mode: 'percent', value: 0 },
   },
   wellness: {
     commission: { useGlobal: true, mode: 'percent', value: 0 },
@@ -76,7 +75,6 @@ export function normalizePlatformPricingConfig(value: any) {
     multi_gym: {
       ...defaults.multi_gym,
       ...(value?.multi_gym || {}),
-      commission: normalizeServiceCommission(value?.multi_gym?.commission, globalCommission),
     },
     wellness: {
       ...defaults.wellness,
@@ -98,7 +96,7 @@ export function normalizePlatformPricingConfig(value: any) {
 export function platformPricingResponse(config: any) {
   const normalized = normalizePlatformPricingConfig(config);
   const response: any = { ...normalized };
-  (['day_pass', 'same_gym', 'multi_gym', 'wellness', 'personal_training'] as ServiceCommissionKey[]).forEach((key) => {
+  (['day_pass', 'same_gym', 'wellness', 'personal_training'] as ServiceCommissionKey[]).forEach((key) => {
     const setting = normalized[key]?.commission;
     response[key] = {
       ...normalized[key],
@@ -106,6 +104,11 @@ export function platformPricingResponse(config: any) {
       commission: effectiveCommission(setting, normalized.globalCommission),
     };
   });
+  response.multi_gym = {
+    ...normalized.multi_gym,
+    commissionSetting: null,
+    commission: null,
+  };
   return response;
 }
 

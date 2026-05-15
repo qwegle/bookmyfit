@@ -1,7 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm';
 
 export type GymTier = 'standard' | 'premium' | 'corporate_exclusive';
-export type GymStatus = 'pending' | 'active' | 'suspended' | 'rejected';
+export type GymStatus = 'pending' | 'active' | 'suspended' | 'rejected' | 'inactive';
 
 @Entity('gyms')
 export class GymEntity {

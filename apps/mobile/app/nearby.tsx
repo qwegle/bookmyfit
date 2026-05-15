@@ -8,7 +8,7 @@ import * as Location from 'expo-location';
 import { useEffect, useRef, useState } from 'react';
 import { colors, fonts, radius } from '../theme/brand';
 import { IconChevronLeft, IconStar, IconPin } from '../components/Icons';
-import { API_BASE } from '../lib/api';
+import { gymsApi } from '../lib/api';
 
 const { width: W, height: H } = Dimensions.get('window');
 const CARD_W = W * 0.72;
@@ -17,7 +17,7 @@ const MAP_H = H * 0.52;
 interface NearbyGym {
   id: string; name: string; address?: string; city?: string;
   latitude?: number; longitude?: number; lat?: number; lng?: number;
-  rating?: number; tier?: string; minPrice?: number;
+  rating?: number; tier?: string; minPrice?: number; distanceKm?: number; distance?: string;
 }
 
 const TIER_COLORS: Record<string, string> = {
@@ -66,17 +66,13 @@ export default function NearbyScreen() {
       setUserPos(toScreen(lat, lng));
 
       try {
-        const res = await fetch(`${API_BASE}/api/v1/gyms?limit=20`);
-        if (res.ok) {
-          const data = await res.json();
-          const list = Array.isArray(data) ? data : data?.data || data?.gyms || data?.items || [];
-          const items: NearbyGym[] = list.filter((g: NearbyGym) => gymLat(g) !== null && gymLng(g) !== null);
-          setGyms(items);
-          setError(null);
-        } else {
-          setGyms([]);
-          setError('Could not load gyms from the API.');
-        }
+        const data: any = await gymsApi.list({ limit: 50, lat, lng, sort: 'nearest' });
+        const list = Array.isArray(data) ? data : data?.data || data?.gyms || data?.items || [];
+        const items: NearbyGym[] = list
+          .filter((g: NearbyGym) => gymLat(g) !== null && gymLng(g) !== null)
+          .sort((a: any, b: any) => Number(a.distanceKm ?? 999999) - Number(b.distanceKm ?? 999999));
+        setGyms(items);
+        setError(null);
       } catch {
         setGyms([]);
         setError('Could not load gyms from the API.');
@@ -189,7 +185,7 @@ export default function NearbyScreen() {
                   </View>
                   <View style={s.locRow}>
                     <IconPin size={10} color={colors.t2} />
-                    <Text style={s.locText} numberOfLines={1}>{item.address || 'Bhubaneswar'}</Text>
+                    <Text style={s.locText} numberOfLines={1}>{item.distance || (item.distanceKm ? `${Number(item.distanceKm).toFixed(1)} km` : item.address || 'Nearby')}</Text>
                   </View>
                   {item.rating && (
                     <View style={s.ratingRow}>

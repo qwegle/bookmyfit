@@ -56,8 +56,8 @@ export default function TiersPage() {
     (async () => {
       setLoading(true);
       try {
-        const data = await api.get<Gym[]>('/gyms');
-        setGyms(Array.isArray(data) ? data : []);
+        const data: any = await api.get('/gyms/admin/list?limit=200');
+        setGyms(Array.isArray(data) ? data : data?.data ?? []);
       } catch {
         setGyms([]);
       } finally {

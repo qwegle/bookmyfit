@@ -125,7 +125,7 @@ export const authApi = {
 };
 
 export const gymsApi = {
-  list: (params?: { city?: string; tier?: string; search?: string; page?: number; limit?: number; category?: string; status?: string }) => {
+  list: (params?: { city?: string; tier?: string; search?: string; page?: number; limit?: number; category?: string; status?: string; lat?: number; lng?: number; sort?: string }) => {
     const q = new URLSearchParams();
     if (params?.city) q.set('city', params.city);
     if (params?.tier) q.set('tier', params.tier);
@@ -134,6 +134,9 @@ export const gymsApi = {
     if (params?.limit) q.set('limit', String(params.limit));
     if (params?.category) q.set('category', params.category);
     if (params?.status) q.set('status', params.status);
+    if (Number.isFinite(params?.lat)) q.set('lat', String(params?.lat));
+    if (Number.isFinite(params?.lng)) q.set('lng', String(params?.lng));
+    if (params?.sort) q.set('sort', params.sort);
     return api.get(`/gyms?${q.toString()}`);
   },
   getById: (id: string) => api.get(`/gyms/${id}`),

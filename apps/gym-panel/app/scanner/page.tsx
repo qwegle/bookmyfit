@@ -33,7 +33,6 @@ export default function ScannerPage() {
   const [qrToken, setQrToken] = useState('');
   const [gymId, setGymId] = useState<string | null>(null);
   const [ratePerDay, setRatePerDay] = useState(50);
-  const [commissionRate, setCommissionRate] = useState(15);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [countdown, setCountdown] = useState(0);
   const [scanning, setScanning] = useState(false);
@@ -52,7 +51,6 @@ export default function ScannerPage() {
     api.get<any>('/gyms/my-gym').then(data => {
       if (data?.id) setGymId(data.id);
       if (data?.ratePerDay) setRatePerDay(Number(data.ratePerDay));
-      if (data?.commissionRate) setCommissionRate(Number(data.commissionRate));
     }).catch(() => {});
   }, []);
 
@@ -158,10 +156,10 @@ export default function ScannerPage() {
         const scanRes = await api.post<any>('/qr/validate-manual', { code: t, gymId });
         const gymEarns = scanRes?.gymEarns != null
           ? Number(scanRes.gymEarns)
-          : ratePerDay * (1 - commissionRate / 100);
+          : ratePerDay;
         const adminEarns = scanRes?.adminEarns != null
           ? Number(scanRes.adminEarns)
-          : ratePerDay - gymEarns;
+          : 0;
         showResultAndResume({
           ok: true,
           userName: scanRes?.user?.name || (scanRes?.user?.id ? `Member ${String(scanRes.user.id).slice(0, 8)}` : 'Member'),
@@ -200,10 +198,10 @@ export default function ScannerPage() {
       } else {
         const gymEarns = scanRes?.gymEarns != null
           ? Number(scanRes.gymEarns)
-          : ratePerDay * (1 - commissionRate / 100);
+          : ratePerDay;
         const adminEarns = scanRes?.adminEarns != null
           ? Number(scanRes.adminEarns)
-          : ratePerDay - gymEarns;
+          : 0;
         showResultAndResume({
           ok: true,
           userName: scanRes?.user?.name || (scanRes?.user?.id ? `Member ${String(scanRes.user.id).slice(0, 8)}` : 'Member'),
@@ -222,7 +220,7 @@ export default function ScannerPage() {
       setValidating(false);
       setQrToken('');
     }
-  }, [gymId, qrToken, ratePerDay, commissionRate, showResultAndResume]);
+  }, [gymId, qrToken, ratePerDay, showResultAndResume]);
 
   const todaySuccess = attendance.filter(a => a.ok).length;
   const todayGymEarnings = attendance.filter(a => a.ok && a.gymEarns).reduce((s, a) => s + (a.gymEarns ?? 0), 0);
@@ -392,8 +390,8 @@ export default function ScannerPage() {
             <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1 }}>Rate Config</div>
             {[
               { label: 'Rate / visit-day', value: `₹${ratePerDay}` },
-              { label: 'Commission', value: `${commissionRate}%` },
-              { label: 'Gym gets / visit', value: `₹${(ratePerDay * (1 - commissionRate / 100)).toFixed(0)}`, highlight: true },
+              { label: 'Platform fee / scan', value: '₹0' },
+              { label: 'Gym gets / visit', value: `₹${ratePerDay.toFixed(0)}`, highlight: true },
             ].map(r => (
               <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
                 <span style={{ color: 'var(--t2)' }}>{r.label}</span>
