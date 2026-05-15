@@ -20,7 +20,9 @@ export default function GymDashboard() {
   const [checkinCount, setCheckinCount] = useState<number | null>(null);
   const [recentCheckins, setRecentCheckins] = useState<Checkin[]>([]);
   const [activeMembers, setActiveMembers] = useState<number | null>(null);
+  const [totalMembers, setTotalMembers] = useState<number | null>(null);
   const [mtdRevenue, setMtdRevenue] = useState<number | null>(null);
+  const [lifetimeRevenue, setLifetimeRevenue] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -41,14 +43,18 @@ export default function GymDashboard() {
       const rawMembers = results[3].status === 'fulfilled' ? results[3].value : null;
       const members = Array.isArray(rawMembers) ? rawMembers : rawMembers?.members || rawMembers?.data || [];
       setActiveMembers(rawMembers?.stats?.active ?? (Array.isArray(members) ? members.filter((m: any) => (m.status || '').toLowerCase() === 'active').length : null));
+      setTotalMembers(rawMembers?.stats?.total ?? rawMembers?.total ?? (Array.isArray(members) ? members.length : null));
       const settlementData = results[4].status === 'fulfilled' ? results[4].value : null;
       setMtdRevenue(Number(settlementData?.current?.netPayout || 0) || null);
+      setLifetimeRevenue(Number(settlementData?.current?.lifetimeGymEarned || settlementData?.current?.lifetimeNetPayout || 0) || null);
       setLoading(false);
     };
     fetchAll();
   }, []);
 
   const stats = [
+    { label: 'Total Members', value: totalMembers !== null ? String(totalMembers) : '-', change: 'all', icon: Users },
+    { label: 'Till Date Earned', value: lifetimeRevenue !== null ? `Rs ${lifetimeRevenue.toLocaleString('en-IN')}` : 'Rs -', change: 'all time', icon: TrendingUp },
     { label: "Today's Check-ins", value: checkinCount !== null ? String(checkinCount) : '—', change: 'today', icon: Calendar },
     { label: 'Active Members', value: activeMembers !== null ? String(activeMembers) : '—', change: 'live', icon: Users },
     { label: 'Avg Rating', value: gym?.rating ? String(gym.rating) : '—', change: 'live', icon: Star },

@@ -27,7 +27,7 @@ class PaymentsService {
       .where('s."userId" = :userId', { userId })
       .andWhere('s.status = :status', { status: 'active' })
       .andWhere('s."planType" IN (:...planTypes)', { planTypes: ['same_gym', 'day_pass'] })
-      .andWhere(':gymId = ANY(s."gymIds")', { gymId })
+      .andWhere('CAST(:gymId AS uuid) = ANY(s."gymIds")', { gymId })
       .andWhere('s."endDate" >= CURRENT_DATE');
 
     if (excludeId) qb.andWhere('s.id != :excludeId', { excludeId });

@@ -46,7 +46,16 @@ export class SettlementEntity {
     multiGymCommission?: number;
     multiGymPayout?: number;
     sameGymRevenue?: number;
+    sameGymCommission?: number;
+    sameGymPayout?: number;
     dayPassRevenue?: number;
+    dayPassCommission?: number;
+    dayPassPayout?: number;
+    ptCommission?: number;
+    ptPayout?: number;
+    trainerAddons?: number;
+    subscriberCount?: number;
+    activeSubscriberCount?: number;
     totalCheckins?: number;
   };
 

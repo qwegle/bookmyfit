@@ -112,7 +112,7 @@ class SubscriptionsService {
       .where('s."userId" = :userId', { userId })
       .andWhere('s.status = :status', { status: 'active' })
       .andWhere('s."planType" IN (:...planTypes)', { planTypes: ['same_gym', 'day_pass'] })
-      .andWhere(':gymId = ANY(s."gymIds")', { gymId })
+      .andWhere('CAST(:gymId AS uuid) = ANY(s."gymIds")', { gymId })
       .andWhere('s."endDate" >= CURRENT_DATE');
 
     if (excludeId) qb.andWhere('s.id != :excludeId', { excludeId });
@@ -435,7 +435,7 @@ class SubscriptionsService {
     } else if (status) {
       qb.andWhere('s.status = :status', { status });
     }
-    if (gymId) qb.andWhere(':gymId = ANY(s."gymIds")', { gymId });
+    if (gymId) qb.andWhere('CAST(:gymId AS uuid) = ANY(s."gymIds")', { gymId });
     const [rows, total] = await Promise.all([
       qb.clone().skip(skip).take(take).getRawMany(),
       qb.clone().getCount(),

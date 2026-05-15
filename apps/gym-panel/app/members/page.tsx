@@ -19,6 +19,11 @@ type Member = {
   startDate: string;
   endDate: string;
   amountPaid: number;
+  gymAmount?: number;
+  subscriptionGymAmount?: number;
+  trainerGymAmount?: number;
+  trainerSummary?: string | null;
+  trainerAddons?: Array<{ trainerName: string; status: string; gymAmount: number; monthlyPrice: number }>;
   createdAt: string;
   todayCheckins?: number;
   canDeactivate?: boolean;
@@ -104,7 +109,7 @@ function ConfirmModal({ message, onConfirm, onCancel }: { message: string; onCon
 function SkeletonRow() {
   return (
     <tr style={{ opacity: 0.4 }}>
-      {Array.from({ length: 8 }).map((_, i) => (
+      {Array.from({ length: 9 }).map((_, i) => (
         <td key={i}><div style={{ height: 14, borderRadius: 6, background: 'rgba(255,255,255,0.08)' }} /></td>
       ))}
     </tr>
@@ -178,12 +183,13 @@ export default function MembersPage() {
 
   const exportCSV = () => {
     const csv = [
-      'Name,Phone,Plan,Gym Type,Status,Start Date,End Date,Amount Paid',
+      'Name,Phone,Plan,Gym Type,Status,Start Date,End Date,Trainer,Gym Amount',
       ...members.map(m => [
         m.name, m.phone, m.planType, m.gymType, m.status,
         m.startDate ? new Date(m.startDate).toLocaleDateString('en-IN') : '',
         m.endDate ? new Date(m.endDate).toLocaleDateString('en-IN') : '',
-        m.amountPaid,
+        m.trainerSummary || '',
+        m.gymAmount ?? m.amountPaid,
       ].join(','))
     ].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -235,7 +241,7 @@ export default function MembersPage() {
       {/* Stats */}
       <div className="grid grid-cols-5 gap-4 mb-8">
         {[
-          { label: 'Total Members', value: total, icon: Users, color: 'var(--accent)' },
+          { label: 'Total Members', value: stats.total, icon: Users, color: 'var(--accent)' },
           { label: 'Active', value: stats.active, icon: UserCheck, color: '#22c55e' },
           { label: 'Pending', value: stats.pending || 0, icon: Clock, color: '#64A0FF' },
           { label: 'Expired', value: stats.expired, icon: Clock, color: '#FFB400' },
@@ -301,7 +307,8 @@ export default function MembersPage() {
               <th>Status</th>
               <th>Start Date</th>
               <th>Expiry</th>
-              <th>Paid</th>
+              <th>Trainer</th>
+              <th>Gym Amount</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -309,7 +316,7 @@ export default function MembersPage() {
             {loading
               ? Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)
               : members.length === 0
-                ? <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--t2)', padding: '40px 0' }}>No members found</td></tr>
+                ? <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--t2)', padding: '40px 0' }}>No members found</td></tr>
                 : members.map(m => {
                   const days = daysLeft(m.endDate);
                   const expiring = days !== null && days > 0 && days <= 7;
@@ -344,6 +351,20 @@ export default function MembersPage() {
                               {new Date(m.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
                             </span>
                           : <span style={{ color: 'var(--t2)' }}>—</span>}
+                      </td>
+                      <td style={{ fontSize: 12 }}>
+                        {m.trainerSummary ? (
+                          <div>
+                            <div style={{ color: '#fff', fontWeight: 600 }}>{m.trainerSummary}</div>
+                            {Number(m.trainerGymAmount || 0) > 0 && (
+                              <div style={{ color: 'var(--t2)', fontSize: 11 }}>
+                                Trainer: Rs {Number(m.trainerGymAmount || 0).toLocaleString('en-IN')}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--t3)' }}>No trainer</span>
+                        )}
                       </td>
                       <td style={{ fontWeight: 600, fontSize: 13 }}>
                         {m.amountPaid ? `₹${Number(m.amountPaid).toLocaleString('en-IN')}` : '—'}

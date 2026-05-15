@@ -14,6 +14,8 @@ type Settlement = {
 type CurrentMonth = {
   grossRevenue: number; commission: number; netPayout: number;
   commissionRate: number; status: string; individualPool?: number; multiGymPool?: number; dayPassPool?: number;
+  trainerPool?: number; lifetimeNetPayout?: number; lifetimeGymEarned?: number;
+  subscriberCount?: number; activeSubscriberCount?: number; trainerAddons?: number;
 };
 
 const EMPTY_CURRENT: CurrentMonth = {
@@ -25,7 +27,7 @@ const fmt = (n: number) => `₹${n.toLocaleString('en-IN')}`;
 function SkeletonRow() {
   return (
     <tr style={{ opacity: 0.4 }}>
-      {Array.from({ length: 6 }).map((_, i) => (
+      {Array.from({ length: 4 }).map((_, i) => (
         <td key={i}><div style={{ height: 14, borderRadius: 6, background: 'rgba(255,255,255,0.08)', animation: 'pulse 1.5s ease-in-out infinite' }} /></td>
       ))}
     </tr>
@@ -74,6 +76,7 @@ export default function SettlementPage() {
     { bucket: 'Same Gym Subscriptions', amount: c.individualPool ?? 0 },
     { bucket: 'Day Passes', amount: c.dayPassPool ?? 0 },
     { bucket: 'Multi Gym Allocation', amount: c.multiGymPool ?? 0 },
+    { bucket: 'Trainer Add-ons', amount: c.trainerPool ?? 0 },
   ].map((b) => ({ ...b, pct: c.grossRevenue > 0 ? Math.round((b.amount / c.grossRevenue) * 100) : 0 }));
 
   return (
@@ -91,9 +94,9 @@ export default function SettlementPage() {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: 'Gross Revenue', value: fmt(c.grossRevenue), icon: TrendingUp },
-            { label: `Commission (${c.commissionRate ?? 0}%)`, value: fmt(c.commission ?? 0), icon: DollarSign },
-            { label: 'Net Payout', value: fmt(c.netPayout ?? 0), icon: CheckCircle },
+            { label: 'This Month Gym Amount', value: fmt(c.netPayout ?? 0), icon: TrendingUp },
+            { label: 'Till Date Earned', value: fmt(c.lifetimeGymEarned ?? c.lifetimeNetPayout ?? c.netPayout ?? 0), icon: DollarSign },
+            { label: 'Subscribers', value: `${c.activeSubscriberCount ?? 0}/${c.subscriberCount ?? 0}`, icon: CheckCircle },
             { label: 'Status', value: (c.status || '—').replace('_', ' ').toUpperCase(), icon: Clock },
           ].map((s) => {
             const Icon = s.icon;
@@ -144,7 +147,7 @@ export default function SettlementPage() {
         </div>
         <table className="glass-table">
           <thead>
-            <tr><th>Period</th><th>Gross</th><th>Commission</th><th>Net Payout</th><th>Status</th><th>Actions</th></tr>
+            <tr><th>Period</th><th>Gym Amount</th><th>Status</th><th>Actions</th></tr>
           </thead>
           <tbody>
             {loading
@@ -152,8 +155,6 @@ export default function SettlementPage() {
               : past.map((p) => (
                 <tr key={p.id}>
                   <td style={{ fontWeight: 600, color: '#fff' }}>{p.period}</td>
-                  <td>{fmt(p.grossRevenue)}</td>
-                  <td style={{ color: 'var(--accent)', fontWeight: 600 }}>{fmt(p.commission)}</td>
                   <td style={{ fontWeight: 600 }}>{fmt(p.netPayout)}</td>
                   <td><span className={p.status === 'paid' ? 'badge-active' : p.status === 'approved' ? 'badge-pending' : 'badge-danger'}>{p.status}</span></td>
                   <td>

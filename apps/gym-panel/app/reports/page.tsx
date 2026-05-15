@@ -8,8 +8,15 @@ import { BarChart2, Download, Users, Activity, Clock, TrendingUp, AlertTriangle 
 const EMPTY_REPORT = {
   totalCheckins: 0,
   uniqueMembers: 0,
+  subscriberCount: 0,
+  activeSubscribers: 0,
   peakHour: '--',
   revenueShare: 0,
+  lifetimeGymEarned: 0,
+  subscriptionRevenue: 0,
+  trainerRevenue: 0,
+  multiGymRevenue: 0,
+  trainerAddonsCount: 0,
   dailyCheckins: [] as { day: string; count: number }[],
   topMembers: [] as { id: string; name: string; visits: number; plan: string; lastVisit: string }[],
 };
@@ -19,8 +26,15 @@ type Period = 'week' | 'month' | 'last_month' | 'custom';
 interface ReportData {
   totalCheckins: number;
   uniqueMembers: number;
+  subscriberCount?: number;
+  activeSubscribers?: number;
   peakHour: string;
   revenueShare: number;
+  lifetimeGymEarned?: number;
+  subscriptionRevenue?: number;
+  trainerRevenue?: number;
+  multiGymRevenue?: number;
+  trainerAddonsCount?: number;
   dailyCheckins: { day: string; count: number }[];
   topMembers: { id: string; name: string; visits: number; plan: string; lastVisit: string }[];
 }
@@ -140,7 +154,7 @@ export default function ReportsPage() {
       </div>
 
       {/* KPI Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 16, marginBottom: 24 }}>
         {loading ? (
           [0, 1, 2, 3].map((i) => <SkeletonKPI key={i} />)
         ) : (
@@ -155,9 +169,9 @@ export default function ReportsPage() {
             <div className="card stat-glow" style={{ padding: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                 <Users size={16} style={{ color: 'var(--accent)' }} />
-                <span className="kicker" style={{ color: 'var(--t2)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Unique Members</span>
+                <span className="kicker" style={{ color: 'var(--t2)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Subscribers</span>
               </div>
-              <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--t)' }}>{report?.uniqueMembers}</div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--t)' }}>{report?.activeSubscribers ?? 0}/{report?.subscriberCount ?? 0}</div>
             </div>
             <div className="card stat-glow" style={{ padding: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -169,10 +183,29 @@ export default function ReportsPage() {
             <div className="card stat-glow" style={{ padding: 20 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                 <TrendingUp size={16} style={{ color: 'var(--accent)' }} />
-                <span className="kicker" style={{ color: 'var(--t2)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Revenue Share</span>
+                <span className="kicker" style={{ color: 'var(--t2)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Period Gym Amount</span>
               </div>
               <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--t)' }}>
                 &#8377;{report?.revenueShare?.toLocaleString('en-IN')}
+              </div>
+            </div>
+            <div className="card stat-glow" style={{ padding: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <TrendingUp size={16} style={{ color: 'var(--accent)' }} />
+                <span className="kicker" style={{ color: 'var(--t2)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Till Date Earned</span>
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--t)' }}>
+                &#8377;{Number(report?.lifetimeGymEarned || 0).toLocaleString('en-IN')}
+              </div>
+            </div>
+            <div className="card stat-glow" style={{ padding: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <Users size={16} style={{ color: 'var(--accent)' }} />
+                <span className="kicker" style={{ color: 'var(--t2)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Trainer Add-ons</span>
+              </div>
+              <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--t)' }}>{report?.trainerAddonsCount ?? 0}</div>
+              <div style={{ color: 'var(--t2)', fontSize: 12, marginTop: 4 }}>
+                Rs {Number(report?.trainerRevenue || 0).toLocaleString('en-IN')}
               </div>
             </div>
           </>
