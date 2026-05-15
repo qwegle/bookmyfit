@@ -14,6 +14,7 @@ import { gymsApi, subscriptionsApi, api } from '../../lib/api';
 import { accessLabelForSubscription, getActiveSubscriptionAccess, normalizeSubscriptionList, subscriptionPlanType } from '../../lib/subscriptionAccess';
 import AuroraBackground from '../../components/AuroraBackground';
 import { DEFAULT_GYM_IMAGE, firstImage } from '../../lib/imageFallbacks';
+import { applyPassCommission } from '../../lib/passPricing';
 
 const { width } = Dimensions.get('window');
 
@@ -59,12 +60,13 @@ function planMonths(plan: any) {
   return Math.max(1, Math.round(Number(plan?.durationDays || plan?.days || 30) / 30));
 }
 
-function minMonthlyPlanPrice(plans: any[]) {
+function minMonthlyPlanPrice(plans: any[], commission?: any) {
   const monthlyPrices = plans
     .filter((plan) => plan?.isActive !== false)
     .map((plan) => {
       const price = positiveNumber(plan?.price || plan?.basePrice);
-      return price ? price / planMonths(plan) : null;
+      const checkoutPrice = applyPassCommission(price, commission);
+      return checkoutPrice ? checkoutPrice / planMonths(plan) : null;
     })
     .filter((price): price is number => !!price);
 
@@ -134,6 +136,7 @@ export default function GymDetail() {
   const [reviews, setReviews] = useState<any[]>([]);
   const [gymPlans, setGymPlans] = useState<any[]>([]);
   const [gymPlansLoading, setGymPlansLoading] = useState(false);
+  const [passPricingConfig, setPassPricingConfig] = useState<any>(null);
   const [sessionSlots, setSessionSlots] = useState<any[]>([]);
   const [sessionTypes, setSessionTypes] = useState<any[]>([]);
   const [activeTypeFilter, setActiveTypeFilter] = useState<string>('all');
@@ -211,6 +214,10 @@ export default function GymDetail() {
         setReviews(list);
       })
       .catch(() => setReviews([]));
+
+    subscriptionsApi.plans()
+      .then((data: any) => setPassPricingConfig(data || null))
+      .catch(() => setPassPricingConfig(null));
   }, [id, fallbackGym]);
 
   const tier = tierLabel(gym?.tier || gym?.tierName || fallbackTier);
@@ -229,8 +236,9 @@ export default function GymDetail() {
   const activePlanType = subscriptionPlanType(activeSub);
   const activeSubLabel = activeSub ? accessLabelForSubscription(activeSub, activePlanType === 'multi_gym') : '';
   const activeUntil = formatDateLabel(activeSub?.endDate || activeSub?.validUntil);
-  const startingMonthlyPrice = minMonthlyPlanPrice(gymPlans);
-  const dayPassPrice = positiveNumber(gym?.dayPassPrice) || positiveNumber(gym?.day_pass_price) || null;
+  const startingMonthlyPrice = minMonthlyPlanPrice(gymPlans, passPricingConfig?.same_gym?.commission);
+  const dayPassBasePrice = positiveNumber(gym?.dayPassPrice) || positiveNumber(gym?.day_pass_price) || positiveNumber(passPricingConfig?.day_pass?.basePrice) || null;
+  const dayPassPrice = applyPassCommission(dayPassBasePrice, passPricingConfig?.day_pass?.commission);
 
   const gymLat = coordinate(gym?.lat, gym?.latitude, gym?.location?.lat);
   const gymLng = coordinate(gym?.lng, gym?.longitude, gym?.location?.lng);

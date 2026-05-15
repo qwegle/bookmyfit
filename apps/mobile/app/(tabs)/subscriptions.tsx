@@ -116,7 +116,12 @@ export default function Subscriptions() {
   const [subs, setSubs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState('');
+  const [showHistory, setShowHistory] = useState(false);
   const displaySubs = useMemo(() => mostRelevantSubscription(subs), [subs]);
+  const pastSubs = useMemo(() => subs
+    .filter((sub) => !isActiveSubscription(sub) && String(sub.status || '').toLowerCase() !== 'pending')
+    .sort((a, b) => subTime(b.endDate || b.createdAt) - subTime(a.endDate || a.createdAt)), [subs]);
+  const visibleSubs = showHistory ? pastSubs : displaySubs;
 
   const loadSubscriptions = useCallback(() => {
     setLoading(true);
@@ -143,8 +148,13 @@ export default function Subscriptions() {
         <ScrollView contentContainerStyle={s.container} showsVerticalScrollIndicator={false}>
           {/* Header */}
           <View style={s.pageHeader}>
-            <Text style={s.pageTitle}>My Memberships</Text>
-            <Text style={s.pageSub}>Your current pass and renewal status</Text>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={s.pageTitle}>My Memberships</Text>
+              <Text style={s.pageSub}>{showHistory ? 'Past memberships and expired passes' : 'Your current pass and renewal status'}</Text>
+            </View>
+            <TouchableOpacity style={s.historyToggle} onPress={() => setShowHistory((value) => !value)}>
+              <Text style={s.historyToggleText}>{showHistory ? 'Current' : 'Past'}</Text>
+            </TouchableOpacity>
           </View>
 
           {!!apiError && (
@@ -158,21 +168,27 @@ export default function Subscriptions() {
 
           {loading ? (
             <SkeletonCard />
-          ) : displaySubs.length === 0 ? (
+          ) : visibleSubs.length === 0 ? (
             <View style={s.emptyState}>
               <View style={s.emptyIconWrap}>
                 <IconDumbbell size={48} color={colors.t3} />
               </View>
-              <Text style={s.emptyTitle}>{apiError ? 'Could Not Load Memberships' : 'No Active Memberships'}</Text>
+              <Text style={s.emptyTitle}>{apiError ? 'Could Not Load Memberships' : showHistory ? 'No Past Memberships' : 'No Active Memberships'}</Text>
               <Text style={s.emptyBody}>
-                {apiError ? 'Please retry after checking your connection or login session.' : 'Purchase a pass to start booking gym sessions.'}
+                {apiError
+                  ? 'Please retry after checking your connection or login session.'
+                  : showHistory
+                    ? 'Expired and cancelled memberships will appear here after you use BookMyFit passes.'
+                    : 'Purchase a pass to start booking gym sessions.'}
               </Text>
-              <TouchableOpacity style={s.browseBtn} onPress={() => router.push('/gyms' as any)}>
-                <Text style={s.browseBtnText}>Browse Gyms</Text>
-              </TouchableOpacity>
+              {!showHistory && (
+                <TouchableOpacity style={s.browseBtn} onPress={() => router.push('/gyms' as any)}>
+                  <Text style={s.browseBtnText}>Browse Gyms</Text>
+                </TouchableOpacity>
+              )}
             </View>
           ) : (
-            displaySubs.map((sub: any) => {
+            visibleSubs.map((sub: any) => {
               const subId = sub.id || sub._id;
               const planType = derivePlanType(sub);
               const status = (sub.status || 'active').toLowerCase();
@@ -355,9 +371,20 @@ export default function Subscriptions() {
 
 const s = StyleSheet.create({
   container: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 36 },
-  pageHeader: { marginBottom: 20, paddingHorizontal: 4 },
+  pageHeader: { marginBottom: 20, paddingHorizontal: 4, flexDirection: 'row', alignItems: 'center', gap: 12 },
   pageTitle: { fontFamily: fonts.serif, fontSize: 28, color: '#fff', letterSpacing: -0.5 },
   pageSub: { fontFamily: fonts.sans, fontSize: 12, color: colors.t2, marginTop: 4 },
+  historyToggle: {
+    minWidth: 76,
+    height: 36,
+    borderRadius: radius.pill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accentSoft,
+    borderWidth: 1,
+    borderColor: colors.accentBorder,
+  },
+  historyToggleText: { fontFamily: fonts.sansBold, fontSize: 12, color: colors.accent },
 
   subCard: {
     marginBottom: 16,

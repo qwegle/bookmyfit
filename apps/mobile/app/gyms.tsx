@@ -11,6 +11,7 @@ import { IconArrowLeft, IconStar, IconPin, IconFilter, IconCheck, IconSearch } f
 import { gymsApi, subscriptionsApi } from '../lib/api';
 import { accessLabelForSubscription, getActiveSubscriptionAccess, normalizeSubscriptionList } from '../lib/subscriptionAccess';
 import { DEFAULT_GYM_IMAGE, firstImage } from '../lib/imageFallbacks';
+import { applyPassCommission } from '../lib/passPricing';
 
 const { width: W } = Dimensions.get('window');
 
@@ -54,6 +55,7 @@ export default function GymListingPage() {
   const [multiGymSub, setMultiGymSub] = useState<any>(null);
   const [hasMultiGymSub, setHasMultiGymSub] = useState(false);
   const [loadError, setLoadError] = useState('');
+  const [passPricingConfig, setPassPricingConfig] = useState<any>(null);
   const pageRef = useRef(1);
 
   const filterByCat = (list: any[], cat: string) => {
@@ -97,6 +99,12 @@ export default function GymListingPage() {
     if (paramCat) setActiveCategory(paramCat);
   }, [paramCat]);
 
+  useEffect(() => {
+    subscriptionsApi.plans()
+      .then((data: any) => setPassPricingConfig(data || null))
+      .catch(() => setPassPricingConfig(null));
+  }, []);
+
   const loadSubscriptionAccess = useCallback(() => {
     subscriptionsApi.mySubscriptions()
       .then((data: any) => {
@@ -134,8 +142,8 @@ export default function GymListingPage() {
       const db = parseFloat(b.distance || b.distanceKm || '999');
       return da - db;
     }
-    if (activeSort === 'price_asc') return (Number(a.dayPassPrice || a.day_pass_price || 999)) - (Number(b.dayPassPrice || b.day_pass_price || 999));
-    if (activeSort === 'price_desc') return (Number(b.dayPassPrice || b.day_pass_price || 0)) - (Number(a.dayPassPrice || a.day_pass_price || 0));
+    if (activeSort === 'price_asc') return (Number(applyPassCommission(positiveNumber(a.dayPassPrice || a.day_pass_price), passPricingConfig?.day_pass?.commission) || 999)) - (Number(applyPassCommission(positiveNumber(b.dayPassPrice || b.day_pass_price), passPricingConfig?.day_pass?.commission) || 999));
+    if (activeSort === 'price_desc') return (Number(applyPassCommission(positiveNumber(b.dayPassPrice || b.day_pass_price), passPricingConfig?.day_pass?.commission) || 0)) - (Number(applyPassCommission(positiveNumber(a.dayPassPrice || a.day_pass_price), passPricingConfig?.day_pass?.commission) || 0));
     return 0;
   });
 
@@ -252,6 +260,7 @@ export default function GymListingPage() {
                   activeSubscription={gid ? activeGymSubs.get(gid) : null}
                   multiGymSub={multiGymSub}
                   hasMultiGymSub={hasMultiGymSub}
+                  passPricingConfig={passPricingConfig}
                 />
               );
             }}
@@ -287,19 +296,22 @@ function GymCard({
   hasMultiGymSub,
   activeSubscription,
   multiGymSub,
+  passPricingConfig,
 }: {
   gym: any;
   isSubscribed?: boolean;
   hasMultiGymSub?: boolean;
   activeSubscription?: any;
   multiGymSub?: any;
+  passPricingConfig?: any;
 }) {
   const name     = gym.name || gym.gymName || 'Gym';
   const rating   = Number(gym.rating || gym.avgRating || 0).toFixed(1);
   const distance = gym.distance || (gym.distanceKm ? `${gym.distanceKm} km` : '');
   const city     = gym.city || gym.location?.city || '';
   const img      = firstImage(gym.images, gym.photos, gym.coverImage, gym.coverPhoto, gym.img) || DEFAULT_GYM_IMAGE;
-  const dayPassPrice = positiveNumber(gym.dayPassPrice || gym.day_pass_price);
+  const dayPassBasePrice = positiveNumber(gym.dayPassPrice || gym.day_pass_price) || positiveNumber(passPricingConfig?.day_pass?.basePrice);
+  const dayPassPrice = applyPassCommission(dayPassBasePrice, passPricingConfig?.day_pass?.commission);
   const discount = gym.discount || null;
   const tags: string[] = (gym.amenities || gym.tags || []).slice(0, 3);
   const gid = gym.id || gym._id;

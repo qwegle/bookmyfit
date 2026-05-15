@@ -127,6 +127,60 @@ export class CashfreeService {
     }
   }
 
+  async fetchOrderPayments(orderId: string) {
+    try {
+      const res = await fetch(`${this.apiBase}/orders/${orderId}/payments`, {
+        headers: {
+          'x-api-version': '2023-08-01',
+          'x-client-id': this.clientId,
+          'x-client-secret': this.clientSecret,
+        },
+      });
+      const data: any = await res.json();
+      return Array.isArray(data) ? data : [];
+    } catch (err: any) {
+      this.logger.error(`Cashfree payments fetch error: ${err.message}`);
+      return [];
+    }
+  }
+
+  async fetchPaidStatus(orderId: string) {
+    const order = await this.fetchOrder(orderId);
+    const orderStatus = String(order?.order_status || '').toUpperCase();
+    if (orderStatus === 'PAID') {
+      return {
+        order,
+        orderStatus,
+        paid: true,
+        paymentId: order?.cf_payment_id || order?.payment?.cf_payment_id,
+      };
+    }
+
+    const payments = await this.fetchOrderPayments(orderId);
+    const paidPayment = payments.find((p: any) => {
+      const status = String(p?.payment_status || p?.paymentStatus || '').toUpperCase();
+      return status === 'SUCCESS' || status === 'PAID';
+    });
+
+    if (paidPayment) {
+      return {
+        order,
+        payments,
+        orderStatus: 'PAID',
+        paid: true,
+        paymentId: paidPayment.cf_payment_id || paidPayment.payment_id,
+      };
+    }
+
+    return {
+      order,
+      payments,
+      orderStatus: orderStatus || String(payments[0]?.payment_status || 'unknown').toUpperCase(),
+      paid: false,
+      paymentId: payments[0]?.cf_payment_id || payments[0]?.payment_id,
+    };
+  }
+
   /**
    * Verify webhook signature.
    * Cashfree signs with: Base64(HmacSHA256(timestamp + rawBody, clientSecret))

@@ -154,10 +154,11 @@ export const subscriptionsApi = {
     isDayPass?: boolean;
     ptAddon?: boolean;
     ptDurationMonths?: number;
+    ptTrainerId?: string;
     couponCode?: string;
   }) => api.post('/subscriptions/purchase', body),
   /** Legacy alias used in order.tsx - maps planId to planType */
-  createOrder: (body: { planId: string; gymId?: string; gymPlanId?: string; durationMonths: number; couponCode?: string; ptAddon?: boolean; ptDurationMonths?: number; totalAmount?: number; isDayPass?: boolean }) => {
+  createOrder: (body: { planId: string; gymId?: string; gymPlanId?: string; durationMonths: number; couponCode?: string; ptAddon?: boolean; ptDurationMonths?: number; ptTrainerId?: string; totalAmount?: number; isDayPass?: boolean }) => {
     const planType = body.planId === 'multi_gym' ? 'multi_gym' : body.planId === 'day_pass' ? 'day_pass' : 'same_gym';
     return api.post('/subscriptions/purchase', {
       planType,
@@ -167,6 +168,7 @@ export const subscriptionsApi = {
       couponCode: body.couponCode,
       ptAddon: body.ptAddon,
       ptDurationMonths: body.ptDurationMonths,
+      ptTrainerId: body.ptTrainerId,
     });
   },
   /** @deprecated — do not call /payments/webhook from mobile; it is a server-to-server Cashfree webhook */

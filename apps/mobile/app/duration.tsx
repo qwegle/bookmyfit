@@ -7,9 +7,8 @@ import AuroraBackground from '../components/AuroraBackground';
 import { useLocalSearchParams, router } from 'expo-router';
 import { colors, fonts, radius } from '../theme/brand';
 import { IconArrowLeft } from '../components/Icons';
+import { trainersApi } from '../lib/api';
 
-const PT_PRICE = 1600;
-const GST_RATE = 0.18;
 const PT_DURATION_OPTIONS = [1, 3, 6, 12];
 
 type DurationOption = {
@@ -28,6 +27,18 @@ type GymPlanOption = {
   name?: string;
   price?: number | string;
   durationDays?: number | string;
+};
+
+type TrainerOption = {
+  id?: string;
+  _id?: string;
+  name?: string;
+  specialization?: string;
+  specialty?: string;
+  monthlyPrice?: number | string;
+  monthlyPriceInr?: number | string;
+  sessionRateInr?: number | string;
+  pricePerSession?: number | string;
 };
 
 function money(value: number) {
@@ -104,14 +115,29 @@ export default function Duration() {
   const [selected, setSelected] = useState(0);
   const [ptAddon, setPtAddon] = useState(false);
   const [ptDurationMonths, setPtDurationMonths] = useState(1);
+  const [trainers, setTrainers] = useState<TrainerOption[]>([]);
+  const [trainersLoading, setTrainersLoading] = useState(false);
+  const [selectedTrainerId, setSelectedTrainerId] = useState('');
 
   const dur = DURATIONS[selected] || { months: 0, label: 'No active plan', sublabel: '', price: 0, save: null, isDayPass: true, hot: false };
   const base = dur.price;
-  const ptCost = !dur.isDayPass && ptAddon ? PT_PRICE * ptDurationMonths : 0;
-  const ptSessions = ptDurationMonths * 8;
+  const selectedTrainer = trainers.find((trainer) => String(trainer.id || trainer._id) === selectedTrainerId) || null;
+  const selectedTrainerMonthly = Number(
+    selectedTrainer?.monthlyPriceInr
+      ?? selectedTrainer?.monthlyPrice
+      ?? selectedTrainer?.sessionRateInr
+      ?? selectedTrainer?.pricePerSession
+      ?? 0,
+  );
+  const fallbackPtMonthly = trainers.length
+    ? Math.min(...trainers.map((trainer) => Number(trainer.monthlyPriceInr ?? trainer.monthlyPrice ?? trainer.sessionRateInr ?? trainer.pricePerSession ?? 0)).filter((price) => Number.isFinite(price) && price > 0))
+    : 0;
+  const ptMonthlyPrice = selectedTrainer && Number.isFinite(selectedTrainerMonthly) && selectedTrainerMonthly > 0
+    ? selectedTrainerMonthly
+    : fallbackPtMonthly;
+  const ptCost = !dur.isDayPass && ptAddon && selectedTrainer ? ptMonthlyPrice * ptDurationMonths : 0;
   const subtotal = base + ptCost;
-  const gst = Math.round(subtotal * GST_RATE);
-  const total = subtotal + gst;
+  const total = subtotal;
   const bottomInset = Math.max(insets.bottom, 34);
   const availablePtDurations = useMemo(
     () => PT_DURATION_OPTIONS.filter((months) => months <= Math.max(dur.months || 1, 1)),
@@ -125,6 +151,42 @@ export default function Duration() {
   useEffect(() => {
     if (!dur.isDayPass) setPtDurationMonths(dur.months || 1);
   }, [dur.isDayPass, dur.months]);
+
+  useEffect(() => {
+    if (ptAddon && trainers.length === 0) setPtAddon(false);
+  }, [ptAddon, trainers.length]);
+
+  useEffect(() => {
+    let active = true;
+    if (!gymId || isPlanDayPass) {
+      setTrainers([]);
+      setSelectedTrainerId('');
+      setPtAddon(false);
+      return () => { active = false; };
+    }
+
+    setTrainersLoading(true);
+    setSelectedTrainerId('');
+    trainersApi.listByGym(String(gymId))
+      .then((data: any) => {
+        if (!active) return;
+        const list = Array.isArray(data) ? data : data?.data || data?.trainers || [];
+        const priced = list.filter((trainer: TrainerOption) => {
+          const price = Number(trainer.monthlyPriceInr ?? trainer.monthlyPrice ?? trainer.sessionRateInr ?? trainer.pricePerSession ?? 0);
+          return Number.isFinite(price) && price > 0;
+        });
+        setTrainers(priced);
+        setSelectedTrainerId((current) => current || String(priced[0]?.id || priced[0]?._id || ''));
+      })
+      .catch(() => {
+        if (active) setTrainers([]);
+      })
+      .finally(() => {
+        if (active) setTrainersLoading(false);
+      });
+
+    return () => { active = false; };
+  }, [gymId, isPlanDayPass]);
 
   const handleCheckout = () => {
     if (DURATIONS.length === 0 || dur.price <= 0) {
@@ -142,6 +204,10 @@ export default function Duration() {
         totalAmount: String(total),
         ptAddon: ptAddon && !dur.isDayPass ? 'true' : 'false',
         ptDurationMonths: String(ptAddon && !dur.isDayPass ? ptDurationMonths : 0),
+        ptTrainerId: ptAddon && !dur.isDayPass ? selectedTrainerId : '',
+        ptTrainerName: ptAddon && !dur.isDayPass ? (selectedTrainer?.name || '') : '',
+        ptMonthlyPrice: ptAddon && !dur.isDayPass ? String(ptMonthlyPrice) : '',
+        ptTotal: ptAddon && !dur.isDayPass ? String(ptCost) : '',
         isDayPass: dur.isDayPass ? 'true' : 'false',
         gymPlanId: dur.gymPlanId || '',
       },
@@ -219,14 +285,25 @@ export default function Duration() {
                 <View style={s.ptLeft}>
                   <Text style={s.ptTitle}>Personal Trainer Add-on</Text>
                   <Text style={s.ptSub} numberOfLines={2}>
-                    {monthsLabel(dur.months)} membership | {monthsLabel(ptDurationMonths)} PT | {ptSessions} sessions
+                    {trainersLoading
+                      ? 'Loading trainers from this gym'
+                      : selectedTrainer
+                        ? `${selectedTrainer.name} | ${monthsLabel(ptDurationMonths)} PT`
+                        : 'Choose a gym trainer for monthly PT pricing'}
                   </Text>
                 </View>
                 <View style={s.ptRight}>
-                  <Text style={s.ptPrice}>{money(PT_PRICE)}/mo</Text>
+                  <Text style={s.ptPrice}>{trainersLoading ? 'Loading' : trainers.length ? `${money(ptMonthlyPrice)}/mo` : 'No trainers'}</Text>
                   <Switch
                     value={ptAddon}
-                    onValueChange={setPtAddon}
+                    onValueChange={(value) => {
+                      if (value && trainers.length === 0) {
+                        Alert.alert('No trainers available', 'This gym has not added monthly trainer pricing yet.');
+                        return;
+                      }
+                      setPtAddon(value);
+                    }}
+                    disabled={trainersLoading || trainers.length === 0}
                     trackColor={{ false: colors.border, true: colors.accentBorder }}
                     thumbColor={ptAddon ? colors.accent : 'rgba(255,255,255,0.4)'}
                   />
@@ -235,6 +312,29 @@ export default function Duration() {
 
               {ptAddon && (
                 <View style={s.ptDurationBlock}>
+                  <Text style={s.ptDurationLabel}>Choose trainer</Text>
+                  <View style={s.trainerPicker}>
+                    {trainers.map((trainer) => {
+                      const trainerId = String(trainer.id || trainer._id || '');
+                      const active = trainerId === selectedTrainerId;
+                      const price = Number(trainer.monthlyPriceInr ?? trainer.monthlyPrice ?? trainer.sessionRateInr ?? trainer.pricePerSession ?? 0);
+                      return (
+                        <TouchableOpacity
+                          key={trainerId}
+                          style={[s.trainerOption, active && s.trainerOptionActive]}
+                          onPress={() => setSelectedTrainerId(trainerId)}
+                          activeOpacity={0.82}
+                        >
+                          <Text style={[s.trainerOptionName, active && { color: '#fff' }]} numberOfLines={1}>
+                            {trainer.name || 'Trainer'}
+                          </Text>
+                          <Text style={[s.trainerOptionPrice, active && { color: colors.accent }]} numberOfLines={1}>
+                            {money(price)}/mo
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                   <Text style={s.ptDurationLabel}>Trainer duration within {monthsLabel(dur.months)} plan</Text>
                   <View style={s.ptDurationChips}>
                     {availablePtDurations.map((months) => {
@@ -269,14 +369,10 @@ export default function Duration() {
             </View>
             {ptAddon && !dur.isDayPass && (
               <View style={s.breakRow}>
-                <Text style={s.breakLabel} numberOfLines={1}>PT Add-on ({ptDurationMonths} mo)</Text>
+                <Text style={s.breakLabel} numberOfLines={1}>PT Add-on ({selectedTrainer?.name || ptDurationMonths + ' mo'})</Text>
                 <Text style={s.breakVal}>{money(ptCost)}</Text>
               </View>
             )}
-            <View style={s.breakRow}>
-              <Text style={s.breakLabel}>GST (18%)</Text>
-              <Text style={s.breakVal}>{money(gst)}</Text>
-            </View>
             <View style={[s.breakRow, s.totalRow]}>
               <Text style={s.totalLabel}>Total</Text>
               <Text style={s.totalVal}>{money(total)}</Text>
@@ -362,6 +458,19 @@ const s = StyleSheet.create({
   ptPrice: { fontFamily: fonts.sansBold, fontSize: 13, color: colors.accent },
   ptDurationBlock: { marginTop: 14, paddingTop: 14, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)' },
   ptDurationLabel: { fontFamily: fonts.sansBold, fontSize: 11, color: colors.t2, marginBottom: 9, textTransform: 'uppercase', letterSpacing: 1 },
+  trainerPicker: { gap: 8, marginBottom: 14 },
+  trainerOption: {
+    minHeight: 52,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.borderGlass,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  trainerOptionActive: { backgroundColor: colors.accentSoft, borderColor: colors.accentBorder },
+  trainerOptionName: { fontFamily: fonts.sansBold, fontSize: 12, color: colors.t, marginBottom: 3 },
+  trainerOptionPrice: { fontFamily: fonts.sansMedium, fontSize: 12, color: colors.t2 },
   ptDurationChips: { flexDirection: 'row', gap: 8 },
   ptDurationChip: {
     flex: 1,

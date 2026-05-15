@@ -11,6 +11,7 @@ import { UserEntity } from '../../database/entities/user.entity';
 import { AppConfigEntity } from '../../database/entities/app-config.entity';
 import { CouponEntity } from '../../database/entities/misc.entity';
 import { GymEntity, GymPlanEntity, MultiGymNetworkEntity } from '../../database/entities/gym.entity';
+import { TrainerEntity, TrainerBookingEntity } from '../../database/entities/trainer.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CashfreeService } from '../payments/cashfree.service';
 import { PaymentsModule } from '../payments/payments.module';
@@ -20,6 +21,13 @@ import { PaymentsModule } from '../payments/payments.module';
  * Same-gym plans are managed entirely by the gym owner in gym-plans module.
  */
 const DEFAULT_MULTIGYM_CONFIG = {
+  day_pass: {
+    basePrice: 149,
+    commission: { mode: 'percent', value: 0 },
+  },
+  same_gym: {
+    commission: { mode: 'percent', value: 0 },
+  },
   multi_gym: {
     name: 'Multi Gym Pass',
     subtitle: 'Unlimited access to every partner gym',
@@ -28,9 +36,6 @@ const DEFAULT_MULTIGYM_CONFIG = {
     features: ['Unlimited gyms, unlimited visits', 'QR Check-in', 'Priority support', 'All gym tiers', 'PT session add-on eligible'],
   },
 };
-
-const GST_RATE = 0.18;
-const PT_ADDON_MONTHLY_PRICE = 1600;
 
 @Injectable()
 class SubscriptionsService {
@@ -42,17 +47,54 @@ class SubscriptionsService {
     @InjectRepository(GymEntity) private readonly gymRepo: Repository<GymEntity>,
     @InjectRepository(GymPlanEntity) private readonly gymPlanRepo: Repository<GymPlanEntity>,
     @InjectRepository(MultiGymNetworkEntity) private readonly networkRepo: Repository<MultiGymNetworkEntity>,
+    @InjectRepository(TrainerEntity) private readonly trainerRepo: Repository<TrainerEntity>,
+    @InjectRepository(TrainerBookingEntity) private readonly trainerBookings: Repository<TrainerBookingEntity>,
     private readonly cashfree: CashfreeService,
   ) {}
 
+  private normalizeCommissionConfig(value: any) {
+    const mode = value?.mode === 'fixed' ? 'fixed' : 'percent';
+    const rawValue = Number(value?.value);
+    return { mode, value: Number.isFinite(rawValue) && rawValue > 0 ? rawValue : 0 };
+  }
+
+  private mergeConfig(value: any) {
+    const merged: any = {
+      day_pass: { ...DEFAULT_MULTIGYM_CONFIG.day_pass, ...(value?.day_pass || {}) },
+      same_gym: { ...DEFAULT_MULTIGYM_CONFIG.same_gym, ...(value?.same_gym || {}) },
+      multi_gym: { ...DEFAULT_MULTIGYM_CONFIG.multi_gym, ...(value?.multi_gym || {}) },
+    };
+    merged.day_pass.commission = this.normalizeCommissionConfig(merged.day_pass.commission);
+    merged.same_gym.commission = this.normalizeCommissionConfig(merged.same_gym.commission);
+    merged.day_pass.basePrice = Math.max(1, Math.round(Number(merged.day_pass.basePrice) || DEFAULT_MULTIGYM_CONFIG.day_pass.basePrice));
+    merged.multi_gym.basePrice = Math.max(1, Math.round(Number(merged.multi_gym.basePrice) || DEFAULT_MULTIGYM_CONFIG.multi_gym.basePrice));
+    return merged;
+  }
+
+  private commissionAmount(baseAmount: number, commission: { mode?: string; value?: number }) {
+    const value = Math.max(0, Number(commission?.value) || 0);
+    if (value <= 0) return 0;
+    return commission?.mode === 'fixed' ? value : baseAmount * (value / 100);
+  }
+
+  private amountWithCheckoutCommission(baseAmount: number, planType: 'day_pass' | 'same_gym' | 'multi_gym', config: any) {
+    if (planType !== 'day_pass' && planType !== 'same_gym') return Math.max(1, Math.round(baseAmount));
+    const commission = planType === 'day_pass' ? config.day_pass?.commission : config.same_gym?.commission;
+    return Math.max(1, Math.round(baseAmount + this.commissionAmount(baseAmount, commission)));
+  }
+
   async getMultigymConfig() {
     const record = await this.configRepo.findOne({ where: { key: 'multigym_plans' } });
-    return record ? { ...DEFAULT_MULTIGYM_CONFIG, ...record.value } : DEFAULT_MULTIGYM_CONFIG;
+    return this.mergeConfig(record?.value);
   }
 
   async setMultigymConfig(data: Partial<typeof DEFAULT_MULTIGYM_CONFIG>) {
     const current = await this.getMultigymConfig();
-    const merged = { ...current, ...data };
+    const merged = this.mergeConfig({
+      day_pass: { ...(current as any).day_pass, ...((data as any)?.day_pass || {}) },
+      same_gym: { ...(current as any).same_gym, ...((data as any)?.same_gym || {}) },
+      multi_gym: { ...(current as any).multi_gym, ...((data as any)?.multi_gym || {}) },
+    });
     await this.configRepo.save(this.configRepo.create({ key: 'multigym_plans', value: merged }));
     return merged;
   }
@@ -64,7 +106,8 @@ class SubscriptionsService {
         planType: 'day_pass',
         name: '1-Day Pass',
         description: 'Drop in to any partner gym for a day',
-        basePrice: 149,
+        basePrice: config.day_pass?.basePrice || 149,
+        commission: config.day_pass?.commission,
         features: ['Single visit', 'Any partner gym', 'Valid for 24 hours', 'No commitment'],
       },
       same_gym: {
@@ -72,6 +115,7 @@ class SubscriptionsService {
         name: 'Same Gym Pass',
         description: 'Unlimited access to your chosen gym',
         basePrice: null,
+        commission: config.same_gym?.commission,
         features: ['Unlimited visits', 'One gym of your choice', 'Monthly subscription', 'Slot booking'],
         note: 'Same-gym memberships are priced by each gym. Select a gym to see active plans.',
         requiresGymPlan: true,
@@ -212,6 +256,7 @@ class SubscriptionsService {
     isDayPass?: boolean;
     ptAddon?: boolean;
     ptDurationMonths?: number;
+    ptTrainerId?: string;
     couponCode?: string;
   }) {
     const config = await this.getMultigymConfig();
@@ -241,7 +286,7 @@ class SubscriptionsService {
       const gymPlan = await this.gymPlanRepo.findOne({ where: { id: gymPlanId, gymId: dto.gymId, isActive: true } });
       if (!gymPlan) throw new BadRequestException('Gym plan not found');
 
-      amount = Number(gymPlan.price);
+      amount = this.amountWithCheckoutCommission(Number(gymPlan.price), 'same_gym', config);
       durationMonths = Math.max(1, Math.round((gymPlan.durationDays || 30) / 30));
     } else if (dto.planType === 'multi_gym') {
       const price = config.multi_gym?.basePrice || 1499;
@@ -256,22 +301,44 @@ class SubscriptionsService {
           .getRawOne();
         if (!gym) throw new BadRequestException('Gym not found');
         await this.assertNoActiveGymPass(userId, dto.gymId);
-        amount = Number(gym.dayPassPrice || 149);
+        amount = this.amountWithCheckoutCommission(Number(gym.dayPassPrice || config.day_pass?.basePrice || 149), 'day_pass', config);
       } else {
-        amount = 149;
+        amount = this.amountWithCheckoutCommission(Number(config.day_pass?.basePrice || 149), 'day_pass', config);
       }
     } else {
       throw new BadRequestException('Invalid planType. Use day_pass, same_gym, or multi_gym');
     }
 
+    let ptBooking: TrainerBookingEntity | null = null;
     if (dto.ptAddon && dto.planType !== 'day_pass') {
       const ptMonths = Math.max(1, Math.min(durationMonths || 1, Math.round(Number(dto.ptDurationMonths) || durationMonths || 1)));
-      amount += PT_ADDON_MONTHLY_PRICE * ptMonths;
+      if (!dto.ptTrainerId) throw new BadRequestException('Select a trainer for the personal trainer add-on');
+      const trainer = await this.trainerRepo.findOne({ where: { id: dto.ptTrainerId, isActive: true } });
+      if (!trainer) throw new BadRequestException('Selected trainer is not available');
+      if (dto.planType === 'same_gym' && gymIds[0] && trainer.gymId !== gymIds[0]) {
+        throw new BadRequestException('Selected trainer does not belong to this gym');
+      }
+      const ptMonthlyPrice = Number(trainer.monthlyPrice || trainer.pricePerSession || 0);
+      if (!Number.isFinite(ptMonthlyPrice) || ptMonthlyPrice <= 0) throw new BadRequestException('Selected trainer monthly price is not configured');
+      const ptAmount = Math.round(ptMonthlyPrice * ptMonths);
+      amount += ptAmount;
+      const ptCommission = ptAmount * 0.25;
+      ptBooking = this.trainerBookings.create({
+        userId,
+        trainerId: trainer.id,
+        gymId: trainer.gymId,
+        sessionDate: new Date(),
+        durationMonths: ptMonths,
+        sessions: 0,
+        amount: ptAmount,
+        platformCommission: ptCommission,
+        status: 'pending',
+      });
     }
 
     const couponDiscount = await this.discountForCoupon(dto.couponCode, amount);
     amount = Math.max(0, amount - couponDiscount);
-    amount = Math.max(1, Math.round(amount * (1 + GST_RATE)));
+    amount = Math.max(1, Math.round(amount));
 
     const startDate = new Date();
     const endDate = new Date();
@@ -297,6 +364,10 @@ class SubscriptionsService {
       razorpayOrderId: cfOrderId,
     } as any);
     const sub = (await this.repo.save(entity as any)) as SubscriptionEntity;
+    if (ptBooking) {
+      ptBooking.cashfreeOrderId = cfOrderId;
+      await this.trainerBookings.save(ptBooking);
+    }
 
     const payment = await this.cashfree.createOrder({
       orderId: cfOrderId,
@@ -310,6 +381,7 @@ class SubscriptionsService {
         planType: dto.planType,
         ptAddon: String(!!dto.ptAddon),
         ptDurationMonths: String(dto.ptDurationMonths || 0),
+        ptTrainerId: dto.ptTrainerId || '',
       },
     });
 
@@ -319,6 +391,7 @@ class SubscriptionsService {
         await this.assertNoActiveGymPass(userId, sub.gymIds[0], sub.id);
       }
       await this.repo.update(sub.id, { status: 'active' });
+      if (ptBooking) await this.trainerBookings.update(ptBooking.id, { status: 'confirmed' });
       sub.status = 'active';
     }
 
@@ -329,26 +402,31 @@ class SubscriptionsService {
   async verifyAndActivate(subId: string, userId: string) {
     const sub = await this.repo.findOne({ where: { id: subId, userId } });
     if (!sub) throw new NotFoundException('Subscription not found');
-    if (sub.status === 'active') return { success: true, subscription: sub };
+    if (sub.status === 'active') {
+      if (sub.razorpayOrderId) await this.trainerBookings.update({ cashfreeOrderId: sub.razorpayOrderId }, { status: 'confirmed' });
+      return { success: true, subscription: sub };
+    }
 
     if ((sub.planType === 'same_gym' || sub.planType === 'day_pass') && sub.gymIds?.[0]) {
       await this.assertNoActiveGymPass(userId, sub.gymIds[0], sub.id);
     }
 
-    // In dev mode, activate directly. In prod this would verify with Cashfree.
-    if (process.env.NODE_ENV !== 'production' || !sub.razorpayOrderId) {
+    // Only explicit mock orders activate without asking Cashfree.
+    if ((process.env.CASHFREE_MOCK_MODE === 'true' && process.env.NODE_ENV !== 'production') || !sub.razorpayOrderId) {
       await this.repo.update(subId, { status: 'active' });
+      if (sub.razorpayOrderId) await this.trainerBookings.update({ cashfreeOrderId: sub.razorpayOrderId }, { status: 'confirmed' });
       sub.status = 'active';
       return { success: true, subscription: sub };
     }
 
     // Prod: fetch Cashfree order status
-    const cfOrder = await this.cashfree.fetchOrder(sub.razorpayOrderId);
-    if (cfOrder?.order_status === 'PAID') {
+    const payment = await this.cashfree.fetchPaidStatus(sub.razorpayOrderId);
+    if (payment.paid) {
       await this.repo.update(subId, { status: 'active' });
+      await this.trainerBookings.update({ cashfreeOrderId: sub.razorpayOrderId }, { status: 'confirmed' });
       sub.status = 'active';
     }
-    return { success: sub.status === 'active', subscription: sub, paymentStatus: cfOrder?.order_status || 'unknown' };
+    return { success: sub.status === 'active', subscription: sub, paymentStatus: payment.paid ? 'PAID' : payment.orderStatus || 'unknown' };
   }
 
   async list(page: any = 1, limit: any = 20, status?: string, gymId?: string) {
@@ -569,7 +647,7 @@ class SubscriptionsController {
 }
 
 @Module({
-  imports: [TypeOrmModule.forFeature([SubscriptionEntity, UserEntity, AppConfigEntity, CouponEntity, GymEntity, GymPlanEntity, MultiGymNetworkEntity]), PaymentsModule],
+  imports: [TypeOrmModule.forFeature([SubscriptionEntity, UserEntity, AppConfigEntity, CouponEntity, GymEntity, GymPlanEntity, MultiGymNetworkEntity, TrainerEntity, TrainerBookingEntity]), PaymentsModule],
   controllers: [SubscriptionsController],
   providers: [SubscriptionsService],
   exports: [SubscriptionsService],

@@ -45,7 +45,11 @@ class PaymentsService {
       this.wellnessBookings.findOne({ where: { cashfreeOrderId: orderId } }),
     ]);
 
-    const paid = status === 'PAID';
+    const normalizedStatus = String(status || '').toUpperCase();
+    const paid = normalizedStatus === 'PAID';
+    const failed = ['FAILED', 'CANCELLED', 'USER_DROPPED', 'EXPIRED'].includes(normalizedStatus);
+
+    const processed: any[] = [];
 
     if (sub) {
       if (paid && (sub.planType === 'same_gym' || sub.planType === 'day_pass') && sub.gymIds?.[0]) {
@@ -53,30 +57,38 @@ class PaymentsService {
         if (duplicate) {
           sub.razorpayPaymentId = paymentId || sub.razorpayPaymentId;
           await this.subs.save(sub);
-          return { processed: true, kind: 'subscription', paid, activated: false, reason: 'duplicate_active_gym_pass' };
+          processed.push({ kind: 'subscription', paid, activated: false, reason: 'duplicate_active_gym_pass' });
+        } else {
+          sub.status = 'active';
+          sub.razorpayPaymentId = paymentId || sub.razorpayPaymentId;
+          await this.subs.save(sub);
+          processed.push({ kind: 'subscription', paid, activated: true });
         }
+      } else {
+        sub.status = paid ? 'active' : sub.status;
+        sub.razorpayPaymentId = paymentId || sub.razorpayPaymentId;
+        await this.subs.save(sub);
+        processed.push({ kind: 'subscription', paid, activated: paid });
       }
-      sub.status = paid ? 'active' : sub.status;
-      sub.razorpayPaymentId = paymentId || sub.razorpayPaymentId;
-      await this.subs.save(sub);
-      return { processed: true, kind: 'subscription', paid, activated: paid };
     }
     if (order) {
-      order.status = paid ? 'paid' : 'cancelled';
+      order.status = paid ? 'paid' : (failed ? 'cancelled' : order.status);
       await this.orders.save(order);
-      return { processed: true, kind: 'order', paid };
+      processed.push({ kind: 'order', paid });
     }
     if (pt) {
-      pt.status = paid ? 'confirmed' : 'cancelled';
+      pt.status = paid ? 'confirmed' : (failed ? 'cancelled' : pt.status);
       await this.ptBookings.save(pt);
-      return { processed: true, kind: 'pt', paid };
+      processed.push({ kind: 'pt', paid });
     }
     if (wellness) {
-      wellness.status = paid ? 'confirmed' : 'cancelled';
+      wellness.status = paid ? 'confirmed' : (failed ? 'cancelled' : wellness.status);
       await this.wellnessBookings.save(wellness);
-      return { processed: true, kind: 'wellness', paid };
+      processed.push({ kind: 'wellness', paid });
     }
 
+    if (processed.length === 1) return { processed: true, ...processed[0] };
+    if (processed.length > 1) return { processed: true, paid, results: processed };
     return { processed: false, reason: 'No matching order', event };
   }
 
@@ -87,17 +99,18 @@ class PaymentsService {
   async handleWebhook(rawBody: string, payload: any) {
     const event = payload?.type;
     const orderId: string | undefined = payload?.data?.order?.order_id;
-    const status: string | undefined = payload?.data?.order?.order_status;
+    const paymentStatus = String(payload?.data?.payment?.payment_status || '').toUpperCase();
+    const status: string | undefined = payload?.data?.order?.order_status || (paymentStatus === 'SUCCESS' ? 'PAID' : paymentStatus);
     const paymentId: string | undefined = payload?.data?.payment?.cf_payment_id;
     return this.applyOrderStatus(orderId || '', status, paymentId, event);
   }
 
   async verifyOrder(orderId: string) {
-    const cfOrder = await this.cashfree.fetchOrder(orderId);
-    const status = cfOrder?.order_status;
+    const payment = await this.cashfree.fetchPaidStatus(orderId);
+    const status = payment.orderStatus;
     if (!status) throw new BadRequestException('Unable to verify payment status');
-    const processed = await this.applyOrderStatus(orderId, status, cfOrder?.cf_payment_id);
-    return { ...processed, orderId, paymentStatus: status, paid: status === 'PAID' };
+    const processed = await this.applyOrderStatus(orderId, payment.paid ? 'PAID' : status, payment.paymentId);
+    return { ...processed, orderId, paymentStatus: payment.paid ? 'PAID' : status, paid: payment.paid };
   }
 }
 

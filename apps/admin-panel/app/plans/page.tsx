@@ -10,12 +10,26 @@ const PLAN_FEATURES = {
   multi_gym: ['Access all partner gyms', 'Switch gyms anytime', 'Slot booking included', 'Priority support'],
 };
 
+type PassCommission = { mode: 'percent' | 'fixed'; value: number };
+const DEFAULT_PASS_COMMISSION: Record<'day_pass' | 'same_gym', PassCommission> = {
+  day_pass: { mode: 'percent', value: 0 },
+  same_gym: { mode: 'percent', value: 0 },
+};
+
+function normalizeCommission(value: any): PassCommission {
+  return {
+    mode: value?.mode === 'fixed' ? 'fixed' : 'percent',
+    value: Math.max(0, Number(value?.value) || 0),
+  };
+}
+
 export default function PlansPage() {
   const { toast } = useToast();
   const [config, setConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [prices, setPrices] = useState({ day_pass: 149, same_gym: 599, multi_gym: 1499 });
+  const [commissions, setCommissions] = useState(DEFAULT_PASS_COMMISSION);
 
   useEffect(() => {
     api.get('/subscriptions/plans')
@@ -25,6 +39,10 @@ export default function PlansPage() {
           day_pass: data?.day_pass?.basePrice || 149,
           same_gym: data?.same_gym?.basePrice || 599,
           multi_gym: data?.multi_gym?.basePrice || 1499,
+        });
+        setCommissions({
+          day_pass: normalizeCommission(data?.day_pass?.commission),
+          same_gym: normalizeCommission(data?.same_gym?.commission),
         });
       })
       .catch(() => {})
@@ -36,7 +54,8 @@ export default function PlansPage() {
     try {
       await api.put('/subscriptions/multigym-config', {
         multi_gym: { basePrice: prices.multi_gym },
-        day_pass: { basePrice: prices.day_pass },
+        day_pass: { basePrice: prices.day_pass, commission: commissions.day_pass },
+        same_gym: { commission: commissions.same_gym },
       });
       toast('Plan prices updated successfully');
     } catch {
@@ -51,6 +70,13 @@ export default function PlansPage() {
     { key: 'same_gym', name: 'Same Gym Pass', description: 'Monthly pass for a single gym', color: '#CCFF00', priceLabel: 'per month', note: 'Gym-specific pricing is set by each gym owner in Gym Management.' },
     { key: 'multi_gym', name: 'Multi Gym Pass', description: 'Monthly pass for all partner gyms', color: '#9B00FF', priceLabel: 'per month' },
   ];
+
+  const updateCommission = (key: 'day_pass' | 'same_gym', patch: Partial<PassCommission>) => {
+    setCommissions((current) => ({
+      ...current,
+      [key]: { ...current[key], ...patch },
+    }));
+  };
 
   return (
     <Shell title="Plan Management">
@@ -113,6 +139,41 @@ export default function PlansPage() {
                     </span>
                   ))}
                 </div>
+
+                {(plan.key === 'day_pass' || plan.key === 'same_gym') && (
+                  <div style={{ marginTop: 16, padding: 14, borderRadius: 12, background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--t)' }}>Checkout commission</div>
+                        <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 3 }}>
+                          Added to user checkout. Gym base pricing stays unchanged. Set 0 for no commission.
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <select
+                          className="glass-input"
+                          style={{ width: 112 }}
+                          value={commissions[plan.key as 'day_pass' | 'same_gym'].mode}
+                          onChange={(e) => updateCommission(plan.key as 'day_pass' | 'same_gym', { mode: e.target.value === 'fixed' ? 'fixed' : 'percent' })}
+                        >
+                          <option value="percent">Percent</option>
+                          <option value="fixed">Fixed Rs</option>
+                        </select>
+                        <input
+                          type="number"
+                          min={0}
+                          className="glass-input"
+                          style={{ width: 100, textAlign: 'right' }}
+                          value={commissions[plan.key as 'day_pass' | 'same_gym'].value}
+                          onChange={(e) => updateCommission(plan.key as 'day_pass' | 'same_gym', { value: Math.max(0, Number(e.target.value) || 0) })}
+                        />
+                        <span style={{ color: 'var(--t2)', fontSize: 12 }}>
+                          {commissions[plan.key as 'day_pass' | 'same_gym'].mode === 'fixed' ? 'Rs' : '%'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {(plan as any).note && (
                   <div style={{ marginTop: 12, fontSize: 12, color: 'var(--t3)', fontStyle: 'italic' }}>

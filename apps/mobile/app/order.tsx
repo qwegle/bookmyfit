@@ -9,8 +9,6 @@ import { colors, fonts, radius } from '../theme/brand';
 import { IconArrowLeft, IconCheck, IconLock, IconTag } from '../components/Icons';
 import { subscriptionsApi, couponsApi } from '../lib/api';
 
-const GST_RATE = 0.18;
-
 function formatDateLabel(value: any) {
   if (!value) return '';
   const date = new Date(String(value));
@@ -21,21 +19,19 @@ function formatDateLabel(value: any) {
 export default function Order() {
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 34);
-  const { planId, planName, gymId, gymName, durationMonths, totalAmount, ptAddon, ptDurationMonths, maxGyms, isDayPass: isDayPassParam, gymPlanId } =
+  const { planId, planName, gymId, gymName, durationMonths, totalAmount, ptAddon, ptDurationMonths, ptTrainerId, ptTrainerName, ptMonthlyPrice, ptTotal: ptTotalParam, maxGyms, isDayPass: isDayPassParam, gymPlanId } =
     useLocalSearchParams<{
       planId: string; planName: string; gymId?: string; gymName?: string;
-      durationMonths: string; totalAmount: string; ptAddon?: string; ptDurationMonths?: string; maxGyms?: string; isDayPass?: string; gymPlanId?: string;
+      durationMonths: string; totalAmount: string; ptAddon?: string; ptDurationMonths?: string; ptTrainerId?: string; ptTrainerName?: string; ptMonthlyPrice?: string; ptTotal?: string; maxGyms?: string; isDayPass?: string; gymPlanId?: string;
     }>();
 
   const hasPt = ptAddon === 'true';
   const isDayPassRoute = isDayPassParam === 'true' || planId === 'day_pass';
   const months = Number(durationMonths) || 1;
   const ptMonths = Math.max(1, Number(ptDurationMonths) || 1);
-  const ptTotal = hasPt ? 1600 * ptMonths : 0;
+  const ptTotal = hasPt ? (Number(ptTotalParam) || ((Number(ptMonthlyPrice) || 0) * ptMonths)) : 0;
   const total = Number(totalAmount) || 0;
-  const gst = Math.round(total / (1 + GST_RATE) * GST_RATE);
-  const subtotalBeforeTax = Math.max(0, total - gst);
-  const planBase = Math.max(0, subtotalBeforeTax - ptTotal);
+  const planBase = Math.max(0, total - ptTotal);
   const isMultigym = planId === 'multi_gym';
   const selectedGymName = gymName || (isMultigym ? 'Any gym on BookMyFit' : 'Selected Gym');
 
@@ -60,8 +56,8 @@ export default function Order() {
   const applyCoupon = async () => {
     if (!coupon.trim()) return;
     try {
-      const result: any = await couponsApi.validate(coupon, subtotalBeforeTax, planId || 'subscription');
-      const d = Math.min(subtotalBeforeTax, Math.round(Number(result?.discount || 0)));
+      const result: any = await couponsApi.validate(coupon, total, planId || 'subscription');
+      const d = Math.min(total, Math.round(Number(result?.discount || 0)));
       setDiscount(d);
       setCouponApplied(true);
       Alert.alert('Coupon Applied!', `Rs ${d.toLocaleString('en-IN')} discount added.`);
@@ -70,9 +66,7 @@ export default function Order() {
     }
   };
 
-  const discountedSubtotal = Math.max(0, subtotalBeforeTax - discount);
-  const payableGst = Math.round(discountedSubtotal * GST_RATE);
-  const finalTotal = Math.max(1, discountedSubtotal + payableGst);
+  const finalTotal = Math.max(1, total - discount);
 
   const handlePay = async () => {
     setLoading(true);
@@ -84,6 +78,7 @@ export default function Order() {
         durationMonths: months,
         ptAddon: hasPt,
         ptDurationMonths: hasPt ? ptMonths : 0,
+        ptTrainerId: hasPt ? (ptTrainerId || undefined) : undefined,
         couponCode: couponApplied ? coupon : undefined,
         totalAmount: finalTotal,
         isDayPass: isDayPassRoute,
@@ -197,14 +192,11 @@ export default function Order() {
           </View>
           {hasPt && (
             <View style={s.row}>
-              <Text style={s.rowLabel}>PT Add-on ({ptMonths} mo)</Text>
+              <Text style={s.rowLabel}>PT Add-on ({ptTrainerName || `${ptMonths} mo`})</Text>
               <Text style={s.rowVal}>Rs {ptTotal.toLocaleString('en-IN')}</Text>
             </View>
           )}
-          <View style={s.row}>
-            <Text style={s.rowLabel}>GST (18%)</Text>
-            <Text style={s.rowVal}>₹{payableGst.toLocaleString('en-IN')}</Text>
-          </View>
+          <Text style={s.taxIncludedText}>All displayed prices are inclusive of GST.</Text>
           {couponApplied && (
             <View style={s.row}>
               <Text style={[s.rowLabel, { color: colors.accent }]}>Discount ({coupon.toUpperCase()})</Text>
@@ -304,6 +296,7 @@ const s = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   rowLabel: { fontFamily: fonts.sans, fontSize: 14, color: colors.t2 },
   rowVal: { fontFamily: fonts.sansMedium, fontSize: 14, color: colors.t },
+  taxIncludedText: { fontFamily: fonts.sans, fontSize: 11, color: colors.t3, marginBottom: 10 },
   divider: { height: 1, backgroundColor: 'rgba(255,255,255,0.09)', marginVertical: 10 },
   totalLabel: { fontFamily: fonts.sansBold, fontSize: 15, color: '#fff' },
   totalVal: { fontFamily: fonts.sansBold, fontSize: 20, color: colors.accent },

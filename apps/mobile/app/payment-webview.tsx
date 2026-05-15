@@ -132,7 +132,11 @@ export default function PaymentWebview() {
           router.replace('/(tabs)/subscriptions' as any);
           return;
         }
-      } catch {}
+      } catch {
+        Alert.alert('Payment is being confirmed', 'We could not verify the payment yet. Please check My Subscriptions shortly.');
+        router.replace('/(tabs)/subscriptions' as any);
+        return;
+      }
     }
     // Route to correct success screen
     if (returnRoute === 'wellness') {
@@ -216,14 +220,21 @@ export default function PaymentWebview() {
     true;
   `;
 
-  const handleMessage = (event: any) => {
+  const handleMessage = async (event: any) => {
     try {
       const msg = JSON.parse(event.nativeEvent.data);
       if (msg.type === 'SUCCESS') handleSuccess();
       else if (msg.type === 'CHECKOUT_RESULT') {
         const payload = msg.payload || {};
         const status = String(payload.paymentDetails?.paymentMessage || payload.order?.order_status || payload.paymentStatus || payload.status || '').toLowerCase();
-        if (status.includes('success') || status.includes('paid')) handleSuccess();
+        if (status.includes('failed') || status.includes('drop') || status.includes('cancel')) {
+          Alert.alert('Payment Failed', 'Your payment was not completed. Please try again.', [
+            { text: 'Try Again', onPress: () => webviewRef.current?.reload() },
+            { text: 'Cancel', onPress: () => router.back() },
+          ]);
+        } else {
+          await handleSuccess();
+        }
       }
       else if (msg.type === 'FAILURE') {
         Alert.alert('Payment Failed', 'Please try again.', [

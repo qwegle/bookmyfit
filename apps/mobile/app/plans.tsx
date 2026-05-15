@@ -6,6 +6,7 @@ import { colors, fonts, radius } from '../theme/brand';
 import { IconArrowLeft, IconCheck, IconBolt, IconDumbbell, IconStar, IconPercent, IconShield, IconHeadphones, IconChevronRight, IconCalendar, IconPin, IconCreditCard, IconArrowRight } from '../components/Icons';
 import { subscriptionsApi, gymsApi, gymPlansApi } from '../lib/api';
 import { getActiveSubscriptionAccess, normalizeSubscriptionList } from '../lib/subscriptionAccess';
+import { applyPassCommission, positiveNumber } from '../lib/passPricing';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -81,11 +82,6 @@ const HOW_STEPS = [
 
 type PlanCard = typeof PLANS[number] & { priceNumber?: number | null; unavailableReason?: string | null };
 
-function positiveNumber(value: any): number | null {
-  const num = Number(value);
-  return Number.isFinite(num) && num > 0 ? num : null;
-}
-
 function formatPrice(value: number) {
   return `₹${Math.round(value).toLocaleString('en-IN')}`;
 }
@@ -99,18 +95,6 @@ function formatDateLabel(value: any) {
 
 function planMonths(plan: any) {
   return Math.max(1, Math.round(Number(plan?.durationDays || plan?.days || 30) / 30));
-}
-
-function minMonthlyPriceFromGymPlans(plans: any[]) {
-  const monthlyPrices = plans
-    .filter((plan) => plan?.isActive !== false)
-    .map((plan) => {
-      const price = positiveNumber(plan?.price || plan?.basePrice);
-      return price ? price / planMonths(plan) : null;
-    })
-    .filter((price): price is number => !!price);
-
-  return monthlyPrices.length ? Math.min(...monthlyPrices) : null;
 }
 
 export default function PlansScreen() {
@@ -182,11 +166,19 @@ export default function PlansScreen() {
 
   const displayPlans: PlanCard[] = useMemo(() => {
     const gymPriceLoading = !!gymId && gymPricingLoading;
-    const dayPrice = gymId
+    const dayBasePrice = gymId
       ? (positiveNumber(selectedGym?.dayPassPrice) || positiveNumber(serverPlans?.day_pass?.basePrice))
       : positiveNumber(serverPlans?.day_pass?.basePrice);
+    const dayPrice = applyPassCommission(dayBasePrice, serverPlans?.day_pass?.commission);
     const activeGymPlans = gymPlans.filter((plan) => plan?.isActive !== false && positiveNumber(plan?.price || plan?.basePrice));
-    const sameMonthly = minMonthlyPriceFromGymPlans(activeGymPlans);
+    const sameMonthlyPrices = activeGymPlans
+      .map((plan) => {
+        const base = positiveNumber(plan?.price || plan?.basePrice);
+        const total = applyPassCommission(base, serverPlans?.same_gym?.commission);
+        return total ? total / planMonths(plan) : null;
+      })
+      .filter((price): price is number => !!price);
+    const sameMonthly = sameMonthlyPrices.length ? Math.min(...sameMonthlyPrices) : null;
     const sameGymUnavailable = !!gymId && !plansLoading && !gymPriceLoading && activeGymPlans.length === 0;
     const multiMonthly = positiveNumber(serverPlans?.multi_gym?.basePrice);
 
@@ -251,13 +243,17 @@ export default function PlansScreen() {
     const sameGymPlanPayload = plan.id === 'same_gym'
       ? gymPlans
         .filter((gymPlan) => gymPlan?.isActive !== false && positiveNumber(gymPlan?.price || gymPlan?.basePrice))
-        .map((gymPlan) => ({
-          id: gymPlan.id,
-          name: gymPlan.name,
-          price: gymPlan.price || gymPlan.basePrice,
-          durationDays: gymPlan.durationDays || gymPlan.days || 30,
-          features: gymPlan.features || [],
-        }))
+        .map((gymPlan) => {
+          const base = positiveNumber(gymPlan.price || gymPlan.basePrice);
+          const displayPrice = applyPassCommission(base, serverPlans?.same_gym?.commission) || base || 0;
+          return {
+            id: gymPlan.id,
+            name: gymPlan.name,
+            price: displayPrice,
+            durationDays: gymPlan.durationDays || gymPlan.days || 30,
+            features: gymPlan.features || [],
+          };
+        })
       : [];
     router.push({
       pathname: '/duration',
