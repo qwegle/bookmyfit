@@ -5,12 +5,14 @@ import { paginate, paginatedResponse } from '../../common/pagination.helper';
 import { ApiTags } from '@nestjs/swagger';
 import { IsString, IsDateString, IsOptional } from 'class-validator';
 import { WellnessPartnerEntity, WellnessServiceEntity, WellnessBookingEntity } from '../../database/entities/wellness.entity';
+import { AppConfigEntity } from '../../database/entities/app-config.entity';
 import { CashfreeService } from '../payments/cashfree.service';
 import { PaymentsModule } from '../payments/payments.module';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/guards/roles.decorator';
 import { v4 as uuid } from 'uuid';
+import { PLATFORM_PRICING_CONFIG_KEY, applyCheckoutCommission, commissionAmount, serviceCommission } from '../../common/commission-config';
 
 class BookWellnessDto {
   @IsDateString() bookingDate: string;
@@ -23,6 +25,7 @@ class WellnessService {
     @InjectRepository(WellnessPartnerEntity) private readonly partners: Repository<WellnessPartnerEntity>,
     @InjectRepository(WellnessServiceEntity) private readonly services: Repository<WellnessServiceEntity>,
     @InjectRepository(WellnessBookingEntity) private readonly bookings: Repository<WellnessBookingEntity>,
+    @InjectRepository(AppConfigEntity) private readonly configRepo: Repository<AppConfigEntity>,
     private readonly cashfree: CashfreeService,
   ) {}
   async listPartners(filter: { city?: string; serviceType?: string } = {}, page: any = 1, limit: any = 20) {
@@ -63,7 +66,9 @@ class WellnessService {
     };
   }
   listServicesOf(partnerId: string) {
-    return this.services.find({ where: { partnerId, isActive: true, approvalStatus: 'approved' } as any });
+    return this.services
+      .find({ where: { partnerId, isActive: true, approvalStatus: 'approved' } as any })
+      .then((rows) => this.withCheckoutPrices(rows));
   }
   createService(data: Partial<WellnessServiceEntity>) {
     const normalized = this.normalizeServiceData(data, { approvalStatus: 'approved', isActive: true } as any);
@@ -86,7 +91,23 @@ class WellnessService {
       .andWhere("s.\"approvalStatus\" = 'approved'")
       .andWhere("p.status = 'active'");
     if (filter.category) qb.andWhere('p."serviceType" = :cat', { cat: filter.category });
-    return qb.orderBy('s.price', 'ASC').getMany();
+    const rows = await qb.orderBy('s.price', 'ASC').getMany();
+    return this.withCheckoutPrices(rows);
+  }
+
+  private async withCheckoutPrices<T extends any>(rows: T[]): Promise<T[]> {
+    const configRow = await this.configRepo.findOne({ where: { key: PLATFORM_PRICING_CONFIG_KEY } });
+    const commission = serviceCommission(configRow?.value, 'wellness');
+    return rows.map((row: any) => {
+      const basePrice = Number(row.price || 0);
+      const checkoutPrice = applyCheckoutCommission(basePrice, commission);
+      return {
+        ...row,
+        basePrice,
+        platformAddOn: Math.max(0, checkoutPrice - basePrice),
+        price: checkoutPrice || basePrice,
+      };
+    });
   }
 
   async listAdminPartners() {
@@ -115,7 +136,8 @@ class WellnessService {
     const [partners, total] = await this.partners.findAndCount({ where, order: { rating: 'DESC' }, skip, take });
     const result = await Promise.all(partners.map(async (partner) => {
       const svcs = await this.services.find({ where: { partnerId: partner.id, isActive: true } });
-      const minPrice = svcs.length ? Math.min(...svcs.map(s => Number(s.price))) : null;
+      const priced = await this.withCheckoutPrices(svcs as any[]);
+      const minPrice = priced.length ? Math.min(...priced.map(s => Number((s as any).price))) : null;
       return { ...partner, minPrice, serviceCount: svcs.length };
     }));
     return paginatedResponse(result, total, p, l);
@@ -127,8 +149,14 @@ class WellnessService {
     const service = await this.services.findOne({ where: { id: serviceId } });
     if (!service) throw new NotFoundException('Service not found');
     const partner = await this.partners.findOne({ where: { id: service.partnerId } });
-    const amount = Number(service.price);
-    const platformCommission = amount * (Number(partner?.commissionRate || 30) / 100);
+    const configRow = await this.configRepo.findOne({ where: { key: PLATFORM_PRICING_CONFIG_KEY } });
+    const baseAmount = Number(service.price);
+    const centralCommission = serviceCommission(configRow?.value, 'wellness');
+    const platformAddOn = commissionAmount(baseAmount, centralCommission);
+    const amount = applyCheckoutCommission(baseAmount, centralCommission);
+    const platformCommission = platformAddOn > 0
+      ? platformAddOn
+      : baseAmount * (Number(partner?.commissionRate || 0) / 100);
     const orderId = `WL_${uuid().slice(0, 18)}`;
     const booking = await this.bookings.save(this.bookings.create({
       userId, partnerId: service.partnerId, serviceId,
@@ -453,7 +481,7 @@ class WellnessController {
 }
 
 @Module({
-  imports: [TypeOrmModule.forFeature([WellnessPartnerEntity, WellnessServiceEntity, WellnessBookingEntity]), PaymentsModule],
+  imports: [TypeOrmModule.forFeature([WellnessPartnerEntity, WellnessServiceEntity, WellnessBookingEntity, AppConfigEntity]), PaymentsModule],
   controllers: [WellnessController],
   providers: [WellnessService],
 })

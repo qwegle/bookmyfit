@@ -271,10 +271,10 @@ class GymsService {
     const makeBaseQuery = () => this.subs
       .createQueryBuilder('s')
       .leftJoin(UserEntity, 'u', 'u.id = s."userId"')
-      .leftJoin(GymPlanEntity, 'gp', 'gp.id = s."gymPlanId" AND gp."gymId" = :gymId', { gymId: gym.id })
+      .leftJoin(GymPlanEntity, 'gp', 'gp.id::text = s."gymPlanId" AND gp."gymId" = :gymId', { gymId: gym.id })
       .where(new Brackets((where) => {
         where
-          .where(':gymId = ANY(s."gymIds")', { gymId: gym.id })
+          .where(':gymId = ANY(COALESCE(s."gymIds", ARRAY[]::uuid[]))', { gymId: gym.id })
           .orWhere('gp.id IS NOT NULL')
           .orWhere(`(
             s."planType" = :multiGym
@@ -309,7 +309,10 @@ class GymsService {
     };
 
     const qb = applyStatus(applySearch(makeBaseQuery())).orderBy('s.createdAt', 'DESC');
-    const [subs, total] = await qb.skip(skip).take(limit).getManyAndCount();
+    const [subs, total] = await Promise.all([
+      qb.clone().skip(skip).take(limit).getMany(),
+      qb.clone().getCount(),
+    ]);
 
     const statsBase = applySearch(makeBaseQuery());
     const [activeCount, pendingCount, expiredCount, cancelledCount] = await Promise.all([

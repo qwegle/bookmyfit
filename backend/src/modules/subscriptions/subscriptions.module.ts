@@ -15,27 +15,15 @@ import { TrainerEntity, TrainerBookingEntity } from '../../database/entities/tra
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CashfreeService } from '../payments/cashfree.service';
 import { PaymentsModule } from '../payments/payments.module';
-
-/**
- * Default plan pricing. Admin can override multi_gym and day_pass via /subscriptions/multigym-config.
- * Same-gym plans are managed entirely by the gym owner in gym-plans module.
- */
-const DEFAULT_MULTIGYM_CONFIG = {
-  day_pass: {
-    basePrice: 149,
-    commission: { mode: 'percent', value: 0 },
-  },
-  same_gym: {
-    commission: { mode: 'percent', value: 0 },
-  },
-  multi_gym: {
-    name: 'Multi Gym Pass',
-    subtitle: 'Unlimited access to every partner gym',
-    basePrice: 1499,
-    gymLimit: null,
-    features: ['Unlimited gyms, unlimited visits', 'QR Check-in', 'Priority support', 'All gym tiers', 'PT session add-on eligible'],
-  },
-};
+import {
+  DEFAULT_PLATFORM_PRICING_CONFIG,
+  PLATFORM_PRICING_CONFIG_KEY,
+  applyCheckoutCommission,
+  commissionAmount,
+  normalizePlatformPricingConfig,
+  platformPricingResponse,
+  serviceCommission,
+} from '../../common/commission-config';
 
 @Injectable()
 class SubscriptionsService {
@@ -52,51 +40,30 @@ class SubscriptionsService {
     private readonly cashfree: CashfreeService,
   ) {}
 
-  private normalizeCommissionConfig(value: any) {
-    const mode = value?.mode === 'fixed' ? 'fixed' : 'percent';
-    const rawValue = Number(value?.value);
-    return { mode, value: Number.isFinite(rawValue) && rawValue > 0 ? rawValue : 0 };
-  }
-
-  private mergeConfig(value: any) {
-    const merged: any = {
-      day_pass: { ...DEFAULT_MULTIGYM_CONFIG.day_pass, ...(value?.day_pass || {}) },
-      same_gym: { ...DEFAULT_MULTIGYM_CONFIG.same_gym, ...(value?.same_gym || {}) },
-      multi_gym: { ...DEFAULT_MULTIGYM_CONFIG.multi_gym, ...(value?.multi_gym || {}) },
-    };
-    merged.day_pass.commission = this.normalizeCommissionConfig(merged.day_pass.commission);
-    merged.same_gym.commission = this.normalizeCommissionConfig(merged.same_gym.commission);
-    merged.day_pass.basePrice = Math.max(1, Math.round(Number(merged.day_pass.basePrice) || DEFAULT_MULTIGYM_CONFIG.day_pass.basePrice));
-    merged.multi_gym.basePrice = Math.max(1, Math.round(Number(merged.multi_gym.basePrice) || DEFAULT_MULTIGYM_CONFIG.multi_gym.basePrice));
-    return merged;
-  }
-
-  private commissionAmount(baseAmount: number, commission: { mode?: string; value?: number }) {
-    const value = Math.max(0, Number(commission?.value) || 0);
-    if (value <= 0) return 0;
-    return commission?.mode === 'fixed' ? value : baseAmount * (value / 100);
-  }
-
   private amountWithCheckoutCommission(baseAmount: number, planType: 'day_pass' | 'same_gym' | 'multi_gym', config: any) {
-    if (planType !== 'day_pass' && planType !== 'same_gym') return Math.max(1, Math.round(baseAmount));
-    const commission = planType === 'day_pass' ? config.day_pass?.commission : config.same_gym?.commission;
-    return Math.max(1, Math.round(baseAmount + this.commissionAmount(baseAmount, commission)));
+    return applyCheckoutCommission(baseAmount, serviceCommission(config, planType));
   }
 
   async getMultigymConfig() {
-    const record = await this.configRepo.findOne({ where: { key: 'multigym_plans' } });
-    return this.mergeConfig(record?.value);
+    const record = await this.configRepo.findOne({ where: { key: PLATFORM_PRICING_CONFIG_KEY } });
+    return platformPricingResponse(record?.value);
   }
 
-  async setMultigymConfig(data: Partial<typeof DEFAULT_MULTIGYM_CONFIG>) {
-    const current = await this.getMultigymConfig();
-    const merged = this.mergeConfig({
-      day_pass: { ...(current as any).day_pass, ...((data as any)?.day_pass || {}) },
-      same_gym: { ...(current as any).same_gym, ...((data as any)?.same_gym || {}) },
-      multi_gym: { ...(current as any).multi_gym, ...((data as any)?.multi_gym || {}) },
+  async setMultigymConfig(data: Partial<typeof DEFAULT_PLATFORM_PRICING_CONFIG>) {
+    const row = await this.configRepo.findOne({ where: { key: PLATFORM_PRICING_CONFIG_KEY } });
+    const current = normalizePlatformPricingConfig(row?.value);
+    const merged = normalizePlatformPricingConfig({
+      ...current,
+      ...data,
+      globalCommission: (data as any)?.globalCommission || current.globalCommission,
+      day_pass: { ...current.day_pass, ...((data as any)?.day_pass || {}) },
+      same_gym: { ...current.same_gym, ...((data as any)?.same_gym || {}) },
+      multi_gym: { ...current.multi_gym, ...((data as any)?.multi_gym || {}) },
+      wellness: { ...current.wellness, ...((data as any)?.wellness || {}) },
+      personal_training: { ...current.personal_training, ...((data as any)?.personal_training || {}) },
     });
-    await this.configRepo.save(this.configRepo.create({ key: 'multigym_plans', value: merged }));
-    return merged;
+    await this.configRepo.save(this.configRepo.create({ key: PLATFORM_PRICING_CONFIG_KEY, value: merged }));
+    return platformPricingResponse(merged);
   }
 
   async plans() {
@@ -108,6 +75,7 @@ class SubscriptionsService {
         description: 'Drop in to any partner gym for a day',
         basePrice: config.day_pass?.basePrice || 149,
         commission: config.day_pass?.commission,
+        commissionSetting: config.day_pass?.commissionSetting,
         features: ['Single visit', 'Any partner gym', 'Valid for 24 hours', 'No commitment'],
       },
       same_gym: {
@@ -116,11 +84,15 @@ class SubscriptionsService {
         description: 'Unlimited access to your chosen gym',
         basePrice: null,
         commission: config.same_gym?.commission,
+        commissionSetting: config.same_gym?.commissionSetting,
         features: ['Unlimited visits', 'One gym of your choice', 'Monthly subscription', 'Slot booking'],
         note: 'Same-gym memberships are priced by each gym. Select a gym to see active plans.',
         requiresGymPlan: true,
       },
       multi_gym: { ...config.multi_gym, planType: 'multi_gym', name: 'Multi Gym Pass', basePrice: config.multi_gym?.basePrice || 1499 },
+      wellness: config.wellness,
+      personal_training: config.personal_training,
+      globalCommission: config.globalCommission,
     };
   }
 
@@ -290,7 +262,7 @@ class SubscriptionsService {
       durationMonths = Math.max(1, Math.round((gymPlan.durationDays || 30) / 30));
     } else if (dto.planType === 'multi_gym') {
       const price = config.multi_gym?.basePrice || 1499;
-      amount = price * (durationMonths || 1);
+      amount = this.amountWithCheckoutCommission(price * (durationMonths || 1), 'multi_gym', config);
     } else if (dto.planType === 'day_pass') {
       if (!dto.gymId) throw new BadRequestException('Select a gym before buying a 1-Day Pass');
       if (!uuidRe.test(dto.gymId)) throw new BadRequestException('Invalid gymId format');
@@ -318,9 +290,10 @@ class SubscriptionsService {
       }
       const ptMonthlyPrice = Number(trainer.monthlyPrice || trainer.pricePerSession || 0);
       if (!Number.isFinite(ptMonthlyPrice) || ptMonthlyPrice <= 0) throw new BadRequestException('Selected trainer monthly price is not configured');
-      const ptAmount = Math.round(ptMonthlyPrice * ptMonths);
+      const ptBaseAmount = Math.round(ptMonthlyPrice * ptMonths);
+      const ptAmount = applyCheckoutCommission(ptBaseAmount, serviceCommission(config, 'personal_training'));
       amount += ptAmount;
-      const ptCommission = ptAmount * 0.25;
+      const ptCommission = commissionAmount(ptBaseAmount, serviceCommission(config, 'personal_training'));
       ptBooking = this.trainerBookings.create({
         userId,
         trainerId: trainer.id,

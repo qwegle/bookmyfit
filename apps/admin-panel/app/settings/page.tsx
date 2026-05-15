@@ -4,7 +4,7 @@ import Link from 'next/link';
 import Shell from '../../components/Shell';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/Toast';
-import { Building2, ListChecks, Plus, Sparkles, Users, X } from 'lucide-react';
+import { ListChecks, Plus, Sparkles, Users, X } from 'lucide-react';
 
 type PassCommission = { mode?: 'percent' | 'fixed'; value?: number };
 interface AdminUser { id: string; name: string; email: string; role: string; lastLogin?: string; isActive?: boolean; }
@@ -40,18 +40,10 @@ function formatCommission(value: PassCommission | undefined) {
   return value?.mode === 'fixed' ? formatMoney(amount) : `${amount}%`;
 }
 
-function avg(values: number[]) {
-  const clean = values.filter((value) => Number.isFinite(value));
-  if (!clean.length) return null;
-  return clean.reduce((sum, value) => sum + value, 0) / clean.length;
-}
-
 export default function SettingsPage() {
   const { toast } = useToast();
   const [plans, setPlans] = useState<any>(null);
-  const [gymStats, setGymStats] = useState({ total: 0, avgCommission: null as number | null });
-  const [wellnessStats, setWellnessStats] = useState({ total: 0, avgCommission: null as number | null });
-  const [availability, setAvailability] = useState({ plans: false, gyms: false, wellness: false });
+  const [availability, setAvailability] = useState({ plans: false });
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [addingAdmin, setAddingAdmin] = useState(false);
@@ -64,29 +56,15 @@ export default function SettingsPage() {
     const load = async () => {
       setLoading(true);
       try {
-        const [planRes, gymRes, wellnessRes, adminRes] = await Promise.all([
+        const [planRes, adminRes] = await Promise.all([
           api.get('/subscriptions/plans').catch(() => null),
-          api.get('/gyms?limit=200').catch(() => null),
-          api.get('/wellness/admin/partners').catch(() => null),
           api.get('/users?role=super_admin&limit=50').catch(() => null),
         ]);
 
         if (!alive) return;
 
         setPlans(planRes || null);
-        setAvailability({ plans: Boolean(planRes), gyms: Boolean(gymRes), wellness: Boolean(wellnessRes) });
-
-        const gyms = asArray(gymRes);
-        setGymStats({
-          total: Number((gymRes as any)?.total || gyms.length || 0),
-          avgCommission: avg(gyms.map((gym: any) => Number(gym.commissionRate))),
-        });
-
-        const wellnessPartners = asArray(wellnessRes);
-        setWellnessStats({
-          total: Number((wellnessRes as any)?.total || wellnessPartners.length || 0),
-          avgCommission: avg(wellnessPartners.map((partner: any) => Number(partner.commissionRate))),
-        });
+        setAvailability({ plans: Boolean(planRes) });
 
         const adminArr = asArray(adminRes);
         setAdmins(adminArr.map(mapAdminUser).filter((user: AdminUser) => user.isActive));
@@ -129,6 +107,13 @@ export default function SettingsPage() {
 
   const revenueCards = [
     {
+      label: 'Global Checkout Add-on',
+      value: loading ? '...' : !availability.plans ? 'Unavailable' : formatCommission(plans?.globalCommission),
+      sub: 'Plan Management',
+      href: '/plans',
+      icon: ListChecks,
+    },
+    {
       label: 'Day Pass Checkout',
       value: loading ? '...' : !availability.plans ? 'Unavailable' : `${formatMoney(plans?.day_pass?.basePrice)} + ${formatCommission(plans?.day_pass?.commission)}`,
       sub: 'Plan Management',
@@ -150,17 +135,10 @@ export default function SettingsPage() {
       icon: ListChecks,
     },
     {
-      label: 'Gym Revenue Share',
-      value: loading ? '...' : !availability.gyms ? 'Unavailable' : gymStats.avgCommission == null ? 'Not set' : `${gymStats.avgCommission.toFixed(1)}% avg`,
-      sub: availability.gyms ? `${gymStats.total} gyms` : 'Gyms API',
-      href: '/tiers',
-      icon: Building2,
-    },
-    {
-      label: 'Wellness Commission',
-      value: loading ? '...' : !availability.wellness ? 'Unavailable' : wellnessStats.avgCommission == null ? 'Not set' : `${wellnessStats.avgCommission.toFixed(1)}% avg`,
-      sub: availability.wellness ? `${wellnessStats.total} partners` : 'Wellness API',
-      href: '/wellness',
+      label: 'Wellness Checkout',
+      value: loading ? '...' : !availability.plans ? 'Unavailable' : formatCommission(plans?.wellness?.commission),
+      sub: 'Plan Management',
+      href: '/plans',
       icon: Sparkles,
     },
   ];
@@ -188,13 +166,11 @@ export default function SettingsPage() {
           <div>
             <h3 className="serif text-lg mb-2">Active Revenue Controls</h3>
             <p className="text-sm max-w-3xl" style={{ color: 'var(--t2)' }}>
-              Checkout add-on commission is managed from Plan Management. Per-gym revenue share is managed from Tier Management or Gym Management. Wellness commission is managed per wellness partner.
+              Checkout and service add-on commission is managed from Plan Management. Set one global value, then override only the services that need a different percentage or fixed amount.
             </p>
           </div>
           <div className="flex flex-wrap gap-2 justify-end">
             <Link href="/plans" className="btn btn-primary text-sm">Plan Management</Link>
-            <Link href="/tiers" className="btn btn-ghost text-sm">Tier Management</Link>
-            <Link href="/wellness" className="btn btn-ghost text-sm">Wellness</Link>
           </div>
         </div>
       </div>

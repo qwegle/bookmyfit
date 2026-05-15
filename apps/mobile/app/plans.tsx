@@ -180,7 +180,7 @@ export default function PlansScreen() {
       .filter((price): price is number => !!price);
     const sameMonthly = sameMonthlyPrices.length ? Math.min(...sameMonthlyPrices) : null;
     const sameGymUnavailable = !!gymId && !plansLoading && !gymPriceLoading && activeGymPlans.length === 0;
-    const multiMonthly = positiveNumber(serverPlans?.multi_gym?.basePrice);
+    const multiMonthly = applyPassCommission(positiveNumber(serverPlans?.multi_gym?.basePrice), serverPlans?.multi_gym?.commission);
 
     return PLANS.map((plan) => {
       if (plan.id === 'day_pass') {

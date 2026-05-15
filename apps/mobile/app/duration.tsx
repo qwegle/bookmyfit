@@ -7,7 +7,8 @@ import AuroraBackground from '../components/AuroraBackground';
 import { useLocalSearchParams, router } from 'expo-router';
 import { colors, fonts, radius } from '../theme/brand';
 import { IconArrowLeft } from '../components/Icons';
-import { trainersApi } from '../lib/api';
+import { api, trainersApi } from '../lib/api';
+import { applyPassCommission } from '../lib/passPricing';
 
 const PT_DURATION_OPTIONS = [1, 3, 6, 12];
 
@@ -118,6 +119,7 @@ export default function Duration() {
   const [trainers, setTrainers] = useState<TrainerOption[]>([]);
   const [trainersLoading, setTrainersLoading] = useState(false);
   const [selectedTrainerId, setSelectedTrainerId] = useState('');
+  const [serverPlans, setServerPlans] = useState<any>(null);
 
   const dur = DURATIONS[selected] || { months: 0, label: 'No active plan', sublabel: '', price: 0, save: null, isDayPass: true, hot: false };
   const base = dur.price;
@@ -135,7 +137,8 @@ export default function Duration() {
   const ptMonthlyPrice = selectedTrainer && Number.isFinite(selectedTrainerMonthly) && selectedTrainerMonthly > 0
     ? selectedTrainerMonthly
     : fallbackPtMonthly;
-  const ptCost = !dur.isDayPass && ptAddon && selectedTrainer ? ptMonthlyPrice * ptDurationMonths : 0;
+  const ptBaseCost = !dur.isDayPass && ptAddon && selectedTrainer ? ptMonthlyPrice * ptDurationMonths : 0;
+  const ptCost = ptBaseCost ? (applyPassCommission(ptBaseCost, serverPlans?.personal_training?.commission) || ptBaseCost) : 0;
   const subtotal = base + ptCost;
   const total = subtotal;
   const bottomInset = Math.max(insets.bottom, 34);
@@ -147,6 +150,14 @@ export default function Duration() {
   useEffect(() => {
     if (selected >= DURATIONS.length) setSelected(0);
   }, [DURATIONS.length, selected]);
+
+  useEffect(() => {
+    let active = true;
+    api.get('/subscriptions/plans')
+      .then((data) => { if (active) setServerPlans(data); })
+      .catch(() => { if (active) setServerPlans(null); });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (!dur.isDayPass) setPtDurationMonths(dur.months || 1);

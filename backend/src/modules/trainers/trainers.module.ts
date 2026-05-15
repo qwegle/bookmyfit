@@ -5,12 +5,14 @@ import { paginate, paginatedResponse } from '../../common/pagination.helper';
 import { ApiTags } from '@nestjs/swagger';
 import { TrainerEntity, TrainerBookingEntity } from '../../database/entities/trainer.entity';
 import { GymEntity } from '../../database/entities/gym.entity';
+import { AppConfigEntity } from '../../database/entities/app-config.entity';
 import { CashfreeService } from '../payments/cashfree.service';
 import { PaymentsModule } from '../payments/payments.module';
 import { v4 as uuid } from 'uuid';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/guards/roles.decorator';
+import { PLATFORM_PRICING_CONFIG_KEY, applyCheckoutCommission, commissionAmount, serviceCommission } from '../../common/commission-config';
 
 @Injectable()
 class TrainersService {
@@ -18,6 +20,7 @@ class TrainersService {
     @InjectRepository(TrainerEntity) private readonly repo: Repository<TrainerEntity>,
     @InjectRepository(TrainerBookingEntity) private readonly bookings: Repository<TrainerBookingEntity>,
     @InjectRepository(GymEntity) private readonly gyms: Repository<GymEntity>,
+    @InjectRepository(AppConfigEntity) private readonly configRepo: Repository<AppConfigEntity>,
     private readonly cashfree: CashfreeService,
   ) {}
   private trainerDto(t: TrainerEntity) {
@@ -93,10 +96,12 @@ class TrainersService {
     const trainer = await this.repo.findOne({ where: { id: trainerId, isActive: true } });
     if (!trainer) throw new Error('Trainer not found');
     const months = Math.max(1, Math.min(12, Number(durationMonths) || 1));
-    const amount = Number(trainer.monthlyPrice || trainer.pricePerSession || 0) * months;
-    if (amount <= 0) throw new BadRequestException('Trainer monthly price is not configured');
-    const commissionRate = 0.25; // default 25%
-    const platformCommission = amount * commissionRate;
+    const baseAmount = Number(trainer.monthlyPrice || trainer.pricePerSession || 0) * months;
+    if (baseAmount <= 0) throw new BadRequestException('Trainer monthly price is not configured');
+    const configRow = await this.configRepo.findOne({ where: { key: PLATFORM_PRICING_CONFIG_KEY } });
+    const commission = serviceCommission(configRow?.value, 'personal_training');
+    const amount = applyCheckoutCommission(baseAmount, commission);
+    const platformCommission = commissionAmount(baseAmount, commission);
     const orderId = `PT_${uuid().slice(0, 18)}`;
 
     const booking = await this.bookings.save(this.bookings.create({
@@ -137,7 +142,7 @@ class TrainersController {
 }
 
 @Module({
-  imports: [TypeOrmModule.forFeature([TrainerEntity, TrainerBookingEntity, GymEntity]), PaymentsModule],
+  imports: [TypeOrmModule.forFeature([TrainerEntity, TrainerBookingEntity, GymEntity, AppConfigEntity]), PaymentsModule],
   controllers: [TrainersController],
   providers: [TrainersService],
 })
