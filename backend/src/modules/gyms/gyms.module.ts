@@ -7,12 +7,16 @@ import { GymEntity, GymPlanEntity, GymStatus } from '../../database/entities/gym
 import { SubscriptionEntity } from '../../database/entities/subscription.entity';
 import { UserEntity } from '../../database/entities/user.entity';
 import { CheckinEntity } from '../../database/entities/checkin.entity';
-import { AmenityEntity } from '../../database/entities/misc.entity';
+import { AmenityEntity, CategoryEntity } from '../../database/entities/misc.entity';
 import { GymScheduleEntity } from '../../database/entities/gym-schedule.entity';
 import { TrainerBookingEntity, TrainerEntity } from '../../database/entities/trainer.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/guards/roles.decorator';
+
+function normalizeCatalogName(value: any): string {
+  return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
 
 @Injectable()
 class GymsService {
@@ -22,6 +26,7 @@ class GymsService {
     @InjectRepository(UserEntity) private readonly users: Repository<UserEntity>,
     @InjectRepository(CheckinEntity) private readonly checkins: Repository<CheckinEntity>,
     @InjectRepository(AmenityEntity) private readonly amenities: Repository<AmenityEntity>,
+    @InjectRepository(CategoryEntity) private readonly categoriesRepo: Repository<CategoryEntity>,
     @InjectRepository(GymScheduleEntity) private readonly schedules: Repository<GymScheduleEntity>,
     @InjectRepository(GymPlanEntity) private readonly gymPlans: Repository<GymPlanEntity>,
     @InjectRepository(TrainerBookingEntity) private readonly trainerBookings: Repository<TrainerBookingEntity>,
@@ -215,6 +220,17 @@ class GymsService {
       throw new ForbiddenException('Cannot update another gym');
     }
     return gym;
+  }
+
+  private async canonicalCategories(names: any[] | undefined) {
+    if (!Array.isArray(names)) return undefined;
+    const active = await this.categoriesRepo.find({ where: { isActive: true } });
+    const byName = new Map(active.map((category) => [normalizeCatalogName(category.name), category.name.trim()]));
+    const normalized = [...new Set(names.map((name) => byName.get(normalizeCatalogName(name))).filter(Boolean) as string[])];
+    if (names.length > 0 && normalized.length === 0) {
+      throw new BadRequestException('Select valid workout categories created by admin');
+    }
+    return normalized;
   }
 
   private readonly kycSchemas: Record<string, { label: string; fields: Array<{ key: string; label: string; type?: string; required?: boolean }> }> = {
@@ -735,7 +751,16 @@ class GymsService {
       };
       qb.andWhere('g.tier = :tier', { tier: tierMap[filter.tier.toLowerCase()] ?? filter.tier.toLowerCase() });
     }
-    if (filter.category) qb.andWhere(':category = ANY(g.categories)', { category: filter.category });
+    if (filter.category) {
+      qb.andWhere(`
+        EXISTS (
+          SELECT 1
+          FROM unnest(COALESCE(g.categories, ARRAY[]::text[]) || COALESCE(g.amenities, ARRAY[]::text[])) AS cat(name)
+          WHERE lower(cat.name) = lower(:category)
+             OR regexp_replace(lower(cat.name), '[^a-z0-9]+', '', 'g') = regexp_replace(lower(:category), '[^a-z0-9]+', '', 'g')
+        )
+      `, { category: filter.category });
+    }
     const location = this.validCoordinate(filter.lat, filter.lng);
     if (location) {
       qb.addSelect(
@@ -761,11 +786,18 @@ class GymsService {
     return this.list(filter, page, limit, { includeSensitive: true, publicOnly: false });
   }
 
-  create(data: Partial<GymEntity>) { return this.repo.save(this.repo.create(this.sanitizeGymPatch(data, true))); }
+  async create(data: Partial<GymEntity>) {
+    const patch = this.sanitizeGymPatch(data, true);
+    const categories = await this.canonicalCategories((data as any)?.categories);
+    if (categories !== undefined) (patch as any).categories = categories;
+    return this.repo.save(this.repo.create(patch));
+  }
 
   async update(id: string, data: Partial<GymEntity>, user: any) {
     await this.assertGymAccess(id, user);
     const patch = this.sanitizeGymPatch(data, user?.role === 'super_admin');
+    const categories = await this.canonicalCategories((data as any)?.categories);
+    if (categories !== undefined) (patch as any).categories = categories;
     await this.repo.update(id, patch);
     await this.syncProfileHoursToSchedule(id, patch as any);
     return this.get(id);
@@ -1073,7 +1105,7 @@ class GymsController {
 }
 
 @Module({
-  imports: [TypeOrmModule.forFeature([GymEntity, GymPlanEntity, SubscriptionEntity, UserEntity, CheckinEntity, AmenityEntity, GymScheduleEntity, TrainerBookingEntity, TrainerEntity])],
+  imports: [TypeOrmModule.forFeature([GymEntity, GymPlanEntity, SubscriptionEntity, UserEntity, CheckinEntity, AmenityEntity, CategoryEntity, GymScheduleEntity, TrainerBookingEntity, TrainerEntity])],
   controllers: [GymsController],
   providers: [GymsService],
   exports: [GymsService],

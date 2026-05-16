@@ -75,14 +75,15 @@ class SubscriptionsService {
 
   async plans() {
     const config = await this.platformPricingConfig();
+    const pricing = platformPricingResponse(config);
     return {
       day_pass: {
         planType: 'day_pass',
         name: '1-Day Pass',
         description: 'Drop in to any partner gym for a day',
-        basePrice: config.day_pass?.basePrice || 149,
-        commission: config.day_pass?.commission,
-        commissionSetting: config.day_pass?.commissionSetting,
+        basePrice: pricing.day_pass?.basePrice || 149,
+        commission: pricing.day_pass?.commission,
+        commissionSetting: pricing.day_pass?.commissionSetting,
         features: ['Single visit', 'Any partner gym', 'Valid for 24 hours', 'No commitment'],
       },
       same_gym: {
@@ -90,16 +91,16 @@ class SubscriptionsService {
         name: 'Same Gym Pass',
         description: 'Unlimited access to your chosen gym',
         basePrice: null,
-        commission: config.same_gym?.commission,
-        commissionSetting: config.same_gym?.commissionSetting,
+        commission: pricing.same_gym?.commission,
+        commissionSetting: pricing.same_gym?.commissionSetting,
         features: ['Unlimited visits', 'One gym of your choice', 'Monthly subscription', 'Slot booking'],
         note: 'Same-gym memberships are priced by each gym. Select a gym to see active plans.',
         requiresGymPlan: true,
       },
-      multi_gym: { ...config.multi_gym, planType: 'multi_gym', name: 'Multi Gym Pass', basePrice: config.multi_gym?.basePrice || 1499 },
-      wellness: config.wellness,
-      personal_training: config.personal_training,
-      globalCommission: config.globalCommission,
+      multi_gym: { ...pricing.multi_gym, planType: 'multi_gym', name: 'Multi Gym Pass', basePrice: pricing.multi_gym?.basePrice || 1499 },
+      wellness: pricing.wellness,
+      personal_training: pricing.personal_training,
+      globalCommission: pricing.globalCommission,
     };
   }
 

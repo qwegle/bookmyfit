@@ -1,23 +1,42 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3003';
 
 const CITIES = ['Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Chennai', 'Pune', 'Kolkata', 'Ahmedabad', 'Jaipur', 'Surat', 'Other'];
+type CategoryOption = { id: string; name: string };
 
 export default function GymSignup() {
   const [step, setStep] = useState<1 | 2>(1);
   const [form, setForm] = useState({
     name: '', email: '', phone: '', password: '', confirmPassword: '',
-    gymName: '', city: CITIES[0], area: '', address: '', lat: '', lng: '',
+    gymName: '', city: CITIES[0], area: '', address: '', lat: '', lng: '', categories: [] as string[],
   });
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+  type TextFormKey = Exclude<keyof typeof form, 'categories'>;
+  const set = (k: TextFormKey) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  useEffect(() => {
+    fetch(`${API}/api/v1/master/categories`)
+      .then((res) => res.ok ? res.json() : [])
+      .then((data) => setCategories(Array.isArray(data) ? data : data?.data || []))
+      .catch(() => setCategories([]));
+  }, []);
+
+  const toggleCategory = (name: string) => {
+    setForm((f) => ({
+      ...f,
+      categories: f.categories.includes(name)
+        ? f.categories.filter((item) => item !== name)
+        : [...f.categories, name],
+    }));
+  };
 
   const nextStep = (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,11 +51,13 @@ export default function GymSignup() {
     e.preventDefault();
     setLoading(true); setError('');
     try {
+      if (form.categories.length === 0) throw new Error('Select at least one workout category');
       const res = await fetch(`${API}/api/v1/auth/gym/register`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: form.name, email: form.email, phone: form.phone, password: form.password,
           gymName: form.gymName, city: form.city, area: form.area, address: form.address,
+          categories: form.categories,
           lat: form.lat ? Number(form.lat) : undefined,
           lng: form.lng ? Number(form.lng) : undefined,
         }),
@@ -166,6 +187,28 @@ export default function GymSignup() {
             <div>
               <label style={labelStyle}>Full Address</label>
               <input style={inputStyle} value={form.address} onChange={set('address')} placeholder="Street address, landmark" required />
+            </div>
+            <div>
+              <label style={labelStyle}>Workout Categories</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {categories.map((category) => {
+                  const active = form.categories.includes(category.name);
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      onClick={() => toggleCategory(category.name)}
+                      className={active ? 'btn btn-primary text-xs' : 'btn btn-ghost text-xs'}
+                      style={{ padding: '8px 12px' }}
+                    >
+                      {category.name}
+                    </button>
+                  );
+                })}
+                {categories.length === 0 && (
+                  <span style={{ color: 'var(--t3)', fontSize: 12 }}>Admin has not created workout categories yet.</span>
+                )}
+              </div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>

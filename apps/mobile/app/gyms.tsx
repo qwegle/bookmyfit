@@ -17,7 +17,7 @@ import { applyPassCommission } from '../lib/passPricing';
 const { width: W } = Dimensions.get('window');
 
 // ── Categories ────────────────────────────────────────────────────────────────
-const CATS = [
+const FALLBACK_CATS = [
   { id: 'all',      label: 'All' },
   { id: 'strength', label: 'Strength' },
   { id: 'cardio',   label: 'Cardio' },
@@ -27,6 +27,10 @@ const CATS = [
   { id: 'zumba',    label: 'Zumba' },
   { id: 'pilates',  label: 'Pilates' },
 ];
+
+function categoryKey(value: any) {
+  return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
 
 const SORTS = [
   { id: 'rating',    label: 'Top Rated' },
@@ -43,11 +47,12 @@ export default function GymListingPage() {
   const { category: paramCat } = useLocalSearchParams<{ category?: string }>();
 
   const [gyms, setGyms] = useState<any[]>([]);
+  const [categories, setCategories] = useState(FALLBACK_CATS);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  const [activeCategory, setActiveCategory] = useState(paramCat || 'all');
+  const [activeCategory, setActiveCategory] = useState(paramCat ? categoryKey(paramCat) : 'all');
   const [activeSort, setActiveSort] = useState('rating');
   const [showSortSheet, setShowSortSheet] = useState(false);
   const [searchText, setSearchText] = useState('');
@@ -71,11 +76,33 @@ export default function GymListingPage() {
     return () => { alive = false; };
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+    gymsApi.categories()
+      .then((data: any) => {
+        if (!alive) return;
+        const rows = Array.isArray(data) ? data : data?.data || [];
+        const fromApi = rows
+          .map((item: any) => ({ id: categoryKey(item?.name), label: String(item?.name || '').trim() }))
+          .filter((item: any) => item.id && item.label);
+        const seen = new Set<string>();
+        const merged = [FALLBACK_CATS[0], ...fromApi, ...FALLBACK_CATS.slice(1)]
+          .filter((item) => {
+            if (seen.has(item.id)) return false;
+            seen.add(item.id);
+            return true;
+          });
+        setCategories(merged);
+      })
+      .catch(() => setCategories(FALLBACK_CATS));
+    return () => { alive = false; };
+  }, []);
+
   const filterByCat = (list: any[], cat: string) => {
     if (cat === 'all') return list;
     return list.filter((g: any) => {
       const cats = [...(g.categories || []), ...(g.amenities || [])];
-      return cats.some((c: string) => c.toLowerCase() === cat.toLowerCase());
+      return cats.some((c: string) => categoryKey(c) === categoryKey(cat));
     });
   };
 
@@ -87,6 +114,7 @@ export default function GymListingPage() {
     try {
       setLoadError('');
       const params: any = { page: pg, limit: 100 }; // show every active gym returned by the database, then filter locally
+      if (cat !== 'all') params.category = cat;
       if (userLocation) {
         params.lat = userLocation.lat;
         params.lng = userLocation.lng;
@@ -96,7 +124,7 @@ export default function GymListingPage() {
       const raw = Array.isArray(res) ? res : res?.gyms || res?.data || [];
       const list = filterByCat(raw, cat);
       if (pg === 1) setGyms(list); else setGyms((prev) => [...prev, ...list]);
-      setHasMore(raw.length >= 50);
+      setHasMore(raw.length >= 100);
       pageRef.current = pg;
     } catch (e: any) {
       if (pg === 1) setGyms([]);
@@ -114,7 +142,7 @@ export default function GymListingPage() {
   }, [activeCategory, userLocation, activeSort, load]);
 
   useEffect(() => {
-    if (paramCat) setActiveCategory(paramCat);
+    if (paramCat) setActiveCategory(categoryKey(paramCat));
   }, [paramCat]);
 
   useEffect(() => {
@@ -223,7 +251,7 @@ export default function GymListingPage() {
 
       {/* ── Category chips ── */}
       <FlatList
-        data={CATS}
+        data={categories}
         horizontal
         showsHorizontalScrollIndicator={false}
         style={s.chipScroller}

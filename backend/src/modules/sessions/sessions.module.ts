@@ -4,7 +4,7 @@ import {
   ConflictException, ForbiddenException, Logger,
 } from '@nestjs/common';
 import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { IsString, IsNumber, IsBoolean, IsOptional, IsArray, Min, Max, Length } from 'class-validator';
@@ -15,10 +15,12 @@ import { SessionScheduleEntity } from '../../database/entities/session-schedule.
 import { SessionSlotEntity } from '../../database/entities/session-slot.entity';
 import { SessionBookingEntity } from '../../database/entities/session-booking.entity';
 import { AttendanceEntity } from '../../database/entities/attendance.entity';
-import { GymEntity } from '../../database/entities/gym.entity';
+import { GymEntity, GymPlanEntity } from '../../database/entities/gym.entity';
 import { SubscriptionEntity } from '../../database/entities/subscription.entity';
 import { UserEntity } from '../../database/entities/user.entity';
 import { CheckinEntity } from '../../database/entities/checkin.entity';
+import { CategoryEntity } from '../../database/entities/misc.entity';
+import { TrainerBookingEntity } from '../../database/entities/trainer.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/guards/roles.decorator';
@@ -133,6 +135,10 @@ function dayOfWeekFromDate(dateStr: string): number {
 
 // ─── Service ─────────────────────────────────────────────────────────────────
 
+function normalizeCatalogName(value: any): string {
+  return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
 function dateTimeInIST(dateStr: string, timeStr: string): Date {
   return new Date(`${dateStr}T${timeStr}:00+05:30`);
 }
@@ -146,6 +152,7 @@ function bookingQrExpiryForSlot(slot: { date: string; endTime: string }) {
 @Injectable()
 export class SessionsService {
   private readonly logger = new Logger('SessionsService');
+  private readonly dailyBlockingStatuses = ['confirmed', 'attended'];
 
   constructor(
     @InjectRepository(GymScheduleEntity) private readonly scheduleRepo: Repository<GymScheduleEntity>,
@@ -159,6 +166,9 @@ export class SessionsService {
     @InjectRepository(UserEntity) private readonly userRepo: Repository<UserEntity>,
     @InjectRepository(CheckinEntity) private readonly checkinRepo: Repository<CheckinEntity>,
     @InjectRepository(BookingQrEntity) private readonly qrRepo: Repository<BookingQrEntity>,
+    @InjectRepository(CategoryEntity) private readonly categoryRepo: Repository<CategoryEntity>,
+    @InjectRepository(GymPlanEntity) private readonly gymPlanRepo: Repository<GymPlanEntity>,
+    @InjectRepository(TrainerBookingEntity) private readonly trainerBookingRepo: Repository<TrainerBookingEntity>,
     private readonly email: EmailService,
     private readonly jwt: JwtService,
   ) {}
@@ -259,10 +269,23 @@ export class SessionsService {
     );
   }
 
+  private async canonicalSessionCategoryName(name: string): Promise<string> {
+    const key = normalizeCatalogName(name);
+    if (!key) throw new BadRequestException('Select a session category');
+    const categories = await this.categoryRepo.find({ where: { isActive: true } });
+    if (categories.length === 0) {
+      throw new BadRequestException('Admin must create workout categories before gyms can add special sessions');
+    }
+    const match = categories.find((category) => normalizeCatalogName(category.name) === key);
+    if (!match) throw new BadRequestException('Select a valid session category created by admin');
+    return match.name.trim();
+  }
+
   async createSessionType(gymId: string, dto: CreateSessionTypeDto): Promise<SessionTypeEntity> {
+    const canonicalName = await this.canonicalSessionCategoryName(dto.name);
     return this.typeRepo.save(
       this.typeRepo.create({
-        gymId, name: dto.name, kind: 'special',
+        gymId, name: canonicalName, kind: 'special',
         description: dto.description,
         durationMinutes: dto.durationMinutes ?? 60,
         maxCapacity: dto.maxCapacity ?? 20,
@@ -276,7 +299,11 @@ export class SessionsService {
   async updateSessionType(gymId: string, id: string, dto: UpdateSessionTypeDto) {
     const type = await this.typeRepo.findOne({ where: { id, gymId } });
     if (!type) throw new NotFoundException('Session type not found');
-    Object.assign(type, dto);
+    const patch: UpdateSessionTypeDto = { ...dto };
+    if (type.kind === 'special' && patch.name !== undefined) {
+      patch.name = await this.canonicalSessionCategoryName(patch.name);
+    }
+    Object.assign(type, patch);
     return this.typeRepo.save(type);
   }
 
@@ -419,7 +446,9 @@ export class SessionsService {
 
     let userBookedSlotId: string | null = null;
     if (userId) {
-      const ex = await this.bookingRepo.findOne({ where: { userId, gymId, slotDate: date } as any });
+      const ex = await this.bookingRepo.findOne({
+        where: { userId, gymId, slotDate: date, status: In(this.dailyBlockingStatuses as any) } as any,
+      });
       if (ex) userBookedSlotId = ex.slotId;
     }
 
@@ -480,6 +509,11 @@ export class SessionsService {
     if (!slot) throw new NotFoundException('Slot not found');
     if (slot.status !== 'scheduled') throw new BadRequestException('This slot is not available');
     if (slot.bookedCount >= slot.maxCapacity) throw new BadRequestException('Slot is full');
+    const today = todayIST();
+    const now = nowTimeIST();
+    if (slot.date < today || (slot.date === today && slot.startTime <= now)) {
+      throw new BadRequestException('This slot has already started. Please choose another slot.');
+    }
     const [slotType, slotSchedule] = await Promise.all([
       this.typeRepo.findOne({ where: { id: slot.sessionTypeId } }),
       this.scheduleRepo.findOne({ where: { gymId: slot.gymId, dayOfWeek: dayOfWeekFromDate(slot.date) } }),
@@ -495,8 +529,8 @@ export class SessionsService {
         .where('sub."userId" = :userId', { userId })
         .andWhere('sub.status = :status', { status: 'active' })
         .andWhere('sub."endDate" >= CURRENT_DATE')
-        .andWhere('(sub."planType" = :multiGym OR :gymId = ANY(sub."gymIds"))', { multiGym: 'multi_gym', gymId: slot.gymId })
-        .orderBy(`CASE WHEN :gymId = ANY(sub."gymIds") THEN 0 ELSE 1 END`, 'ASC')
+        .andWhere('(sub."planType" = :multiGym OR CAST(:gymId AS uuid) = ANY(sub."gymIds"))', { multiGym: 'multi_gym', gymId: slot.gymId })
+        .orderBy(`CASE WHEN CAST(:gymId AS uuid) = ANY(sub."gymIds") THEN 0 ELSE 1 END`, 'ASC')
         .addOrderBy('sub."createdAt"', 'DESC')
         .getOne();
     if (!sub) throw new BadRequestException('No active subscription found. Please subscribe first.');
@@ -522,33 +556,50 @@ export class SessionsService {
       if (sub.planType === 'multi_gym') {
         // Cross-gym lock for multi_gym: only 1 session per day across ALL gyms
         const multiDayExisting = await this.bookingRepo.findOne({
-          where: { userId, slotDate: slot.date } as any,
+          where: { userId, slotDate: slot.date, status: In(this.dailyBlockingStatuses as any) } as any,
         });
-        if (multiDayExisting && multiDayExisting.status !== 'cancelled') {
+        if (multiDayExisting) {
           throw new ConflictException('Your Multi Gym Pass allows 1 session per day across all gyms. You already have a session booked today.');
         }
       } else {
         // same_gym: 1 session per day at this gym
         const dayExisting = await this.bookingRepo.findOne({
-          where: { userId, gymId: slot.gymId, slotDate: slot.date } as any,
+          where: { userId, gymId: slot.gymId, slotDate: slot.date, status: In(this.dailyBlockingStatuses as any) } as any,
         });
-        if (dayExisting && dayExisting.status !== 'cancelled') {
+        if (dayExisting) {
           throw new ConflictException('You already have a session booked at this gym for this day. Only 1 session per day is allowed.');
         }
       }
     }
 
-    const booking = (await this.bookingRepo.save(
-      this.bookingRepo.create({
-        slotId: slot.id, userId, gymId: slot.gymId,
-        subscriptionId: sub.id, slotDate: slot.date,
-        status: 'confirmed', bookingRef: randomRef(),
-      } as any),
-    )) as any as SessionBookingEntity;
+    let shouldIncrementSlotCount = true;
+    let booking = await this.bookingRepo.findOne({ where: { slotId: slot.id, userId } as any });
+    if (booking) {
+      if (this.dailyBlockingStatuses.includes(booking.status)) {
+        throw new ConflictException('You already have this slot booked.');
+      }
+      shouldIncrementSlotCount = booking.status === 'cancelled';
+      booking.subscriptionId = sub.id;
+      booking.gymId = slot.gymId;
+      booking.slotDate = slot.date;
+      booking.status = 'confirmed';
+      booking.bookingRef = booking.bookingRef || randomRef();
+      booking = await this.bookingRepo.save(booking);
+    } else {
+      booking = (await this.bookingRepo.save(
+        this.bookingRepo.create({
+          slotId: slot.id, userId, gymId: slot.gymId,
+          subscriptionId: sub.id, slotDate: slot.date,
+          status: 'confirmed', bookingRef: randomRef(),
+        } as any),
+      )) as any as SessionBookingEntity;
+    }
 
-    slot.bookedCount += 1;
-    if (slot.bookedCount >= slot.maxCapacity) slot.status = 'full';
-    await this.slotRepo.save(slot);
+    if (shouldIncrementSlotCount) {
+      slot.bookedCount += 1;
+      if (slot.bookedCount >= slot.maxCapacity) slot.status = 'full';
+      await this.slotRepo.save(slot);
+    }
 
     const [sessionType, gym, user] = await Promise.all([
       slotType || this.typeRepo.findOne({ where: { id: slot.sessionTypeId } }),
@@ -696,8 +747,8 @@ export class SessionsService {
       .where('sub."userId" = :userId', { userId })
       .andWhere('sub.status = :status', { status: 'active' })
       .andWhere('sub."endDate" >= CURRENT_DATE')
-      .andWhere('(sub."planType" = :multiGym OR :gymId = ANY(sub."gymIds"))', { multiGym: 'multi_gym', gymId })
-      .orderBy(`CASE WHEN :gymId = ANY(sub."gymIds") THEN 0 ELSE 1 END`, 'ASC')
+      .andWhere('(sub."planType" = :multiGym OR CAST(:gymId AS uuid) = ANY(sub."gymIds"))', { multiGym: 'multi_gym', gymId })
+      .orderBy(`CASE WHEN CAST(:gymId AS uuid) = ANY(sub."gymIds") THEN 0 ELSE 1 END`, 'ASC')
       .addOrderBy('sub."createdAt"', 'DESC')
       .getOne();
     if (!sub) return { success: false, reason: 'no_active_subscription', message: 'No active subscription.' };
@@ -891,6 +942,18 @@ export class SessionsService {
       subIds.length ? this.subRepo.createQueryBuilder('sub').whereInIds(subIds).getMany() : [],
       bookingIds.length ? this.qrRepo.createQueryBuilder('q').where('q."slotBookingId" IN (:...bookingIds)', { bookingIds }).getMany() : [],
     ]);
+    const gymPlanIds = [...new Set(subs.map((sub: any) => sub.gymPlanId).filter(Boolean))];
+    const cashfreeOrderIds = [...new Set(subs.map((sub: any) => sub.razorpayOrderId).filter(Boolean))];
+    const [gymPlans, trainerBookings] = await Promise.all([
+      gymPlanIds.length ? this.gymPlanRepo.createQueryBuilder('gp').whereInIds(gymPlanIds).getMany() : [],
+      cashfreeOrderIds.length ? this.trainerBookingRepo.find({ where: { cashfreeOrderId: In(cashfreeOrderIds as string[]) } }) : [],
+    ]);
+    const trainerBaseByOrderAndGym = new Map<string, number>();
+    trainerBookings.forEach((booking: any) => {
+      const key = `${booking.cashfreeOrderId}:${booking.gymId}`;
+      const baseAmount = Math.max(0, Number(booking.amount || 0) - Number(booking.platformCommission || 0));
+      trainerBaseByOrderAndGym.set(key, (trainerBaseByOrderAndGym.get(key) || 0) + baseAmount);
+    });
     const planLabels: Record<string, string> = {
       day_pass: '1-Day Pass',
       same_gym: 'Same Gym Pass',
@@ -900,24 +963,42 @@ export class SessionsService {
       const slot = slots.find((s) => s.id === b.slotId);
       const sub = subs.find((s) => s.id === b.subscriptionId);
       const qr = qrs.find((q) => q.slotBookingId === b.id);
+      const gym = gyms.find((g) => g.id === b.gymId);
+      const gymPlan = sub?.gymPlanId ? gymPlans.find((plan) => plan.id === (sub as any).gymPlanId) : null;
+      const baseGymAmount = sub?.planType === 'same_gym'
+        ? Number(gymPlan?.price ?? gym?.sameGymMonthlyPrice ?? 0)
+        : sub?.planType === 'day_pass'
+          ? Number(gym?.dayPassPrice ?? 149)
+          : sub?.planType === 'multi_gym'
+            ? Number(gym?.ratePerDay ?? 0)
+            : 0;
+      const trainerBaseAmount = sub?.razorpayOrderId
+        ? Number(trainerBaseByOrderAndGym.get(`${(sub as any).razorpayOrderId}:${b.gymId}`) || 0)
+        : 0;
+      const gymAmount = Math.round(Math.max(0, baseGymAmount + trainerBaseAmount));
+      const checkoutAmountPaid = Number(sub?.amountPaid || 0);
       return {
         ...b,
         slot,
         sessionType: slot ? types.find((t) => t.id === slot.sessionTypeId) : null,
         user: users.find((u) => u.id === b.userId),
-        gym: gyms.find((g) => g.id === b.gymId),
+        gym,
         subscription: sub ? {
           id: sub.id,
           planType: sub.planType,
           planName: planLabels[sub.planType] || sub.planType,
           status: sub.status,
-          amountPaid: Number(sub.amountPaid || 0),
+          amountPaid: checkoutAmountPaid,
+          checkoutAmountPaid,
+          gymAmount,
           startDate: sub.startDate,
           endDate: sub.endDate,
         } : null,
         planType: sub?.planType || null,
         planName: sub ? (planLabels[sub.planType] || sub.planType) : null,
-        amountPaid: Number(sub?.amountPaid || 0),
+        amountPaid: checkoutAmountPaid,
+        checkoutAmountPaid,
+        gymAmount,
         bookingQrId: qr?.id || null,
         bookingQrUsedAt: qr?.usedAt || null,
         bookingQrExpiresAt: qr?.expiresAt || null,
@@ -1106,7 +1187,7 @@ export class SessionsController {
       GymScheduleEntity, SessionTypeEntity, SessionScheduleEntity,
       SessionSlotEntity, SessionBookingEntity, AttendanceEntity,
       GymEntity, SubscriptionEntity, UserEntity, CheckinEntity,
-      BookingQrEntity,
+      BookingQrEntity, CategoryEntity, GymPlanEntity, TrainerBookingEntity,
     ]),
     EmailModule,
     JwtModule.register({

@@ -27,11 +27,15 @@ type BookingRow = {
   planName?: string;
   planType?: string;
   amountPaid?: number;
-  subscription?: { planName?: string; planType?: string; amountPaid?: number; status?: string };
+  gymAmount?: number;
+  checkoutAmountPaid?: number;
+  subscription?: { planName?: string; planType?: string; amountPaid?: number; gymAmount?: number; checkoutAmountPaid?: number; status?: string };
   slot?: { startTime: string; endTime: string; date: string };
   sessionType?: { name: string; color: string };
   user?: { name: string; phone: string };
 };
+
+type Category = { id: string; name: string };
 
 const pill = (color: string) => ({
   background: `${color}22`, border: `1px solid ${color}44`,
@@ -44,6 +48,7 @@ export default function SessionsPage() {
   const [sessionTypes, setSessionTypes] = useState<SessionType[]>([]);
   const [schedules, setSchedules] = useState<SessionSchedule[]>([]);
   const [bookings, setBookings] = useState<BookingRow[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [bookingDate, setBookingDate] = useState(new Date().toISOString().split('T')[0]);
   const [loading, setLoading] = useState(true);
   const [expandedType, setExpandedType] = useState<string | null>(null);
@@ -64,12 +69,14 @@ export default function SessionsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      const [types, scheds] = await Promise.all([
+      const [types, scheds, cats] = await Promise.all([
         api.get('/sessions/session-types'),
         api.get('/sessions/session-schedules'),
+        api.get('/master/categories'),
       ]);
       setSessionTypes(types || []);
       setSchedules(scheds || []);
+      setCategories(Array.isArray(cats) ? cats : cats?.data || []);
     } catch {}
     setLoading(false);
   };
@@ -93,7 +100,7 @@ export default function SessionsPage() {
 
   const saveType = async () => {
     setError('');
-    if (!form.name.trim()) { setError('Session name is required'); return; }
+    if (!form.name.trim()) { setError('Select a session category'); return; }
     try {
       if (editingType) {
         await api.put(`/sessions/session-types/${editingType.id}`, form);
@@ -301,16 +308,21 @@ export default function SessionsPage() {
                 Add Special Session
               </h3>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
-                {[
-                  { label: 'Session Name', key: 'name', placeholder: 'e.g. Yoga, Zumba, HIIT' },
-                  { label: 'Instructor', key: 'instructor', placeholder: 'Instructor name (optional)' },
-                ].map(({ label, key, placeholder }) => (
-                  <div key={key}>
-                    <label style={{ display: 'block', fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>{label}</label>
-                    <input value={(form as any)[key]} onChange={(e) => setForm((p) => ({ ...p, [key]: e.target.value }))} placeholder={placeholder}
-                      style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
-                  </div>
-                ))}
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Session Name</label>
+                  <select value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} disabled={categories.length === 0}
+                    style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, color: '#fff', fontSize: 14, boxSizing: 'border-box' }}>
+                    <option value="" style={{ background: '#111' }}>{categories.length ? 'Select category' : 'No categories created by admin'}</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.name} style={{ background: '#111' }}>{category.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Instructor</label>
+                  <input value={form.instructor} onChange={(e) => setForm((p) => ({ ...p, instructor: e.target.value }))} placeholder="Instructor name (optional)"
+                    style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, color: '#fff', fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
               </div>
               <div style={{ marginBottom: 14 }}>
                 <label style={{ display: 'block', fontSize: 11, color: 'rgba(255,255,255,0.4)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Description</label>
@@ -400,7 +412,7 @@ export default function SessionsPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                    {['Manual ID', 'Member', 'Plan', 'Session', 'Time', 'Status', 'Paid'].map((h) => (
+                    {['Manual ID', 'Member', 'Plan', 'Session', 'Time', 'Status', 'Gym Amount'].map((h) => (
                       <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: 'rgba(255,255,255,0.35)', fontWeight: 600 }}>{h}</th>
                     ))}
                   </tr>
@@ -426,8 +438,8 @@ export default function SessionsPage() {
                         <span style={pill(statusColor(b.status))}>{b.status.replace('_', ' ').toUpperCase()}</span>
                       </td>
                       <td style={{ padding: '12px 16px', fontSize: 13, color: 'rgba(255,255,255,0.75)', fontWeight: 700 }}>
-                        {Number(b.subscription?.amountPaid ?? b.amountPaid ?? 0) > 0
-                          ? `Rs ${Number(b.subscription?.amountPaid ?? b.amountPaid).toLocaleString('en-IN')}`
+                        {Number(b.subscription?.gymAmount ?? b.gymAmount ?? 0) > 0
+                          ? `Rs ${Number(b.subscription?.gymAmount ?? b.gymAmount).toLocaleString('en-IN')}`
                           : '-'}
                       </td>
                     </tr>

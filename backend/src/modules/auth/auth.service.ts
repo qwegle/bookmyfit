@@ -6,15 +6,21 @@ import * as bcrypt from 'bcryptjs';
 import Redis from 'ioredis';
 import { UserEntity } from '../../database/entities/user.entity';
 import { GymEntity } from '../../database/entities/gym.entity';
+import { CategoryEntity } from '../../database/entities/misc.entity';
 import { CorporateAccountEntity } from '../../database/entities/corporate.entity';
 import { REDIS_CLIENT } from '../../common/redis/redis.module';
 import { EmailService } from '../email/email.service';
+
+function normalizeCatalogName(value: any): string {
+  return String(value ?? '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectRepository(UserEntity) private readonly users: Repository<UserEntity>,
     @InjectRepository(GymEntity) private readonly gyms: Repository<GymEntity>,
+    @InjectRepository(CategoryEntity) private readonly categoriesRepo: Repository<CategoryEntity>,
     @InjectRepository(CorporateAccountEntity) private readonly corporates: Repository<CorporateAccountEntity>,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly jwt: JwtService,
@@ -101,10 +107,14 @@ export class AuthService {
 
   async registerGym(data: {
     email: string; password: string; name: string;
-    gymName: string; city: string; area: string; address: string; phone?: string; lat?: number; lng?: number;
+    gymName: string; city: string; area: string; address: string; phone?: string; lat?: number; lng?: number; categories?: string[];
   }) {
     const existing = await this.users.findOne({ where: { email: data.email } });
     if (existing) throw new BadRequestException('An account with this email already exists');
+    const activeCategories = await this.categoriesRepo.find({ where: { isActive: true } });
+    const categoryByName = new Map(activeCategories.map((category) => [normalizeCatalogName(category.name), category.name.trim()]));
+    const categories = [...new Set((data.categories || []).map((name) => categoryByName.get(normalizeCatalogName(name))).filter(Boolean) as string[])];
+    if (categories.length === 0) throw new BadRequestException('Select at least one valid workout category');
     const passwordHash = await bcrypt.hash(data.password, 10);
     const user = await this.users.save(
       this.users.create({ email: data.email, name: data.name, phone: data.phone, passwordHash, role: 'gym_owner', isActive: true }),
@@ -113,6 +123,7 @@ export class AuthService {
       this.gyms.create({
         name: data.gymName, city: data.city, area: data.area,
         address: data.address,
+        categories,
         lat: Number.isFinite(Number(data.lat)) ? Number(data.lat) : 0,
         lng: Number.isFinite(Number(data.lng)) ? Number(data.lng) : 0,
         status: 'pending', ownerId: user.id, kycStatus: 'not_started',

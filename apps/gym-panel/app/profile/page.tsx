@@ -19,6 +19,11 @@ interface FormState {
   lng: string;
 }
 
+interface CategoryOption {
+  id: string;
+  name: string;
+}
+
 export default function ProfilePage() {
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -43,12 +48,20 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [partnerTier, setPartnerTier] = useState('');
   const [rating, setRating] = useState<number | null>(null);
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
-        const data = await api.get('/gyms/my-gym');
+        const [data, catData] = await Promise.all([
+          api.get('/gyms/my-gym'),
+          api.get('/master/categories'),
+        ]);
+        const categoryList = Array.isArray(catData) ? catData : catData?.data || [];
+        setCategories(categoryList);
+        setSelectedCategories(Array.isArray(data.categories) ? data.categories : []);
         setGymId(data._id || data.id || '');
         setPartnerTier(data.partnerTier || data.tier || '');
         setRating(data.rating || data.avgRating || null);
@@ -78,6 +91,7 @@ export default function ProfilePage() {
     setSaving(true);
     setError(null);
     try {
+      if (selectedCategories.length === 0) throw new Error('Select at least one workout category');
       const endpoint = gymId ? `/gyms/${gymId}` : '/gyms/my-gym';
       await api.put(endpoint, {
         name: form.displayName,
@@ -91,6 +105,7 @@ export default function ProfilePage() {
         website: form.website,
         lat: form.lat,
         lng: form.lng,
+        categories: selectedCategories,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
@@ -104,6 +119,12 @@ export default function ProfilePage() {
   const handleChange = (field: keyof FormState) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => setForm(prev => ({ ...prev, [field]: e.target.value }));
+
+  const toggleCategory = (name: string) => {
+    setSelectedCategories((prev) => (
+      prev.includes(name) ? prev.filter((item) => item !== name) : [...prev, name]
+    ));
+  };
 
   return (
     <Shell title="Gym Profile">
@@ -232,6 +253,33 @@ export default function ProfilePage() {
                   onChange={handleChange('description')}
                   placeholder="Brief description of your gym"
                 />
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold block mb-2" style={{ color: 'var(--t2)' }}>
+                  Workout Categories
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {categories.map((category) => {
+                    const active = selectedCategories.includes(category.name);
+                    return (
+                      <button
+                        key={category.id}
+                        type="button"
+                        onClick={() => toggleCategory(category.name)}
+                        className={active ? 'btn btn-primary text-xs' : 'btn btn-ghost text-xs'}
+                        style={{ padding: '8px 12px' }}
+                      >
+                        {category.name}
+                      </button>
+                    );
+                  })}
+                  {categories.length === 0 && (
+                    <span className="text-xs" style={{ color: 'var(--t3)' }}>
+                      Admin has not created workout categories yet.
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Address */}

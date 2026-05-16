@@ -139,7 +139,10 @@ export default function CategoriesPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* Categories */}
         <div className="glass p-6">
-          <h3 className="serif text-lg mb-4">Workout Categories</h3>
+          <h3 className="serif text-lg mb-1">Workout Categories / Session Names</h3>
+          <p className="text-xs mb-4" style={{ color: 'var(--t2)' }}>
+            Gyms choose these categories for profile filtering and special session names.
+          </p>
           <div className="flex gap-2 mb-4">
             <input
               className="glass-input flex-1"

@@ -8,7 +8,8 @@ import AuroraBackground from '../components/AuroraBackground';
 import { useLocalSearchParams, router } from 'expo-router';
 import { colors, fonts, radius } from '../theme/brand';
 import { IconArrowLeft, IconUser, IconStar, IconClock, IconCheck } from '../components/Icons';
-import { trainersApi, usersApi } from '../lib/api';
+import { subscriptionsApi, trainersApi, usersApi } from '../lib/api';
+import { applyPassCommission } from '../lib/passPricing';
 
 interface Trainer {
   id: string;
@@ -33,9 +34,22 @@ export default function TrainersScreen() {
   const [date, setDate] = useState('');
   const [booking, setBooking] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [serverPlans, setServerPlans] = useState<any>(null);
+
+  const trainerMonthlyPrice = (trainer?: Trainer | null) =>
+    Number(trainer?.monthlyPriceInr || trainer?.monthlyPrice || trainer?.pricePerSession || 0);
+
+  const trainerCheckoutMonthlyPrice = (trainer?: Trainer | null) => {
+    const base = trainerMonthlyPrice(trainer);
+    return applyPassCommission(base, serverPlans?.personal_training?.commission) || base;
+  };
+
+  const trainerCheckoutTotal = (trainer?: Trainer | null, monthsValue = durationMonths) =>
+    Math.max(0, trainerCheckoutMonthlyPrice(trainer) * Math.max(1, parseInt(monthsValue) || 1));
 
   useEffect(() => {
     usersApi.me().then((d: any) => setUser(d?.user || d)).catch(() => {});
+    subscriptionsApi.plans().then((data: any) => setServerPlans(data || null)).catch(() => setServerPlans(null));
     if (!gymId) { setLoading(false); return; }
     trainersApi.listByGym(gymId as string)
       .then((d: any) => {
@@ -50,8 +64,7 @@ export default function TrainersScreen() {
     if (!selected || !user) return;
     const months = Math.max(1, parseInt(durationMonths) || 1);
     const startDate = date.trim() || new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-    const monthlyPrice = Number(selected.monthlyPriceInr || selected.monthlyPrice || selected.pricePerSession || 0);
-    const totalPrice = Math.max(0, monthlyPrice * months);
+    const totalPrice = trainerCheckoutTotal(selected, String(months));
     setBooking(true);
     try {
       // trainersApi.book creates booking + Cashfree order in one call
@@ -63,6 +76,7 @@ export default function TrainersScreen() {
       });
       const orderId: string = res?.payment?.orderId || res?.payment?.cfOrderId || res?.booking?.cashfreeOrderId || '';
       const sessionId: string = res?.payment?.cfSessionId || res?.payment?.paymentSessionId || '';
+      const chargedAmount = Number(res?.booking?.amount || res?.payment?.amount || totalPrice);
       setSelected(null);
       if (orderId) {
         router.push({
@@ -73,7 +87,7 @@ export default function TrainersScreen() {
             planId: 'pt_monthly',
             planName: `${months} month trainer plan`,
             gymId: selected.gymId || (gymId as string) || '',
-            amountPaid: String(totalPrice),
+            amountPaid: String(chargedAmount),
           },
         } as any);
       } else {
@@ -133,7 +147,7 @@ export default function TrainersScreen() {
                     <Text style={s.metaText}>{t.totalSessions}+ members</Text>
                   </View>
                 ) : null}
-                <Text style={s.price}>Rs {Number(t.monthlyPriceInr || t.monthlyPrice || t.pricePerSession || 0).toLocaleString()}/month</Text>
+                <Text style={s.price}>Rs {trainerCheckoutMonthlyPrice(t).toLocaleString()}/month</Text>
               </View>
               <TouchableOpacity
                 style={s.bookBtn}
@@ -184,7 +198,7 @@ export default function TrainersScreen() {
                 <View style={s.totalRow}>
                   <Text style={s.totalLabel}>Total Cost</Text>
                   <Text style={s.totalValue}>
-                    Rs {((parseInt(durationMonths) || 1) * Number(selected.monthlyPriceInr || selected.monthlyPrice || selected.pricePerSession || 0)).toLocaleString()}
+                    Rs {trainerCheckoutTotal(selected).toLocaleString()}
                   </Text>
                 </View>
 

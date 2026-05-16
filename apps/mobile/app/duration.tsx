@@ -137,6 +137,9 @@ export default function Duration() {
   const ptMonthlyPrice = selectedTrainer && Number.isFinite(selectedTrainerMonthly) && selectedTrainerMonthly > 0
     ? selectedTrainerMonthly
     : fallbackPtMonthly;
+  const ptMonthlyCheckoutPrice = ptMonthlyPrice
+    ? (applyPassCommission(ptMonthlyPrice, serverPlans?.personal_training?.commission) || ptMonthlyPrice)
+    : 0;
   const ptBaseCost = !dur.isDayPass && ptAddon && selectedTrainer ? ptMonthlyPrice * ptDurationMonths : 0;
   const ptCost = ptBaseCost ? (applyPassCommission(ptBaseCost, serverPlans?.personal_training?.commission) || ptBaseCost) : 0;
   const subtotal = base + ptCost;
@@ -217,7 +220,7 @@ export default function Duration() {
         ptDurationMonths: String(ptAddon && !dur.isDayPass ? ptDurationMonths : 0),
         ptTrainerId: ptAddon && !dur.isDayPass ? selectedTrainerId : '',
         ptTrainerName: ptAddon && !dur.isDayPass ? (selectedTrainer?.name || '') : '',
-        ptMonthlyPrice: ptAddon && !dur.isDayPass ? String(ptMonthlyPrice) : '',
+        ptMonthlyPrice: ptAddon && !dur.isDayPass ? String(ptMonthlyCheckoutPrice) : '',
         ptTotal: ptAddon && !dur.isDayPass ? String(ptCost) : '',
         isDayPass: dur.isDayPass ? 'true' : 'false',
         gymPlanId: dur.gymPlanId || '',
@@ -304,7 +307,7 @@ export default function Duration() {
                   </Text>
                 </View>
                 <View style={s.ptRight}>
-                  <Text style={s.ptPrice}>{trainersLoading ? 'Loading' : trainers.length ? `${money(ptMonthlyPrice)}/mo` : 'No trainers'}</Text>
+                  <Text style={s.ptPrice}>{trainersLoading ? 'Loading' : trainers.length ? `${money(ptMonthlyCheckoutPrice)}/mo` : 'No trainers'}</Text>
                   <Switch
                     value={ptAddon}
                     onValueChange={(value) => {
@@ -329,6 +332,7 @@ export default function Duration() {
                       const trainerId = String(trainer.id || trainer._id || '');
                       const active = trainerId === selectedTrainerId;
                       const price = Number(trainer.monthlyPriceInr ?? trainer.monthlyPrice ?? trainer.sessionRateInr ?? trainer.pricePerSession ?? 0);
+                      const checkoutPrice = applyPassCommission(price, serverPlans?.personal_training?.commission) || price;
                       return (
                         <TouchableOpacity
                           key={trainerId}
@@ -340,7 +344,7 @@ export default function Duration() {
                             {trainer.name || 'Trainer'}
                           </Text>
                           <Text style={[s.trainerOptionPrice, active && { color: colors.accent }]} numberOfLines={1}>
-                            {money(price)}/mo
+                            {money(checkoutPrice)}/mo
                           </Text>
                         </TouchableOpacity>
                       );
