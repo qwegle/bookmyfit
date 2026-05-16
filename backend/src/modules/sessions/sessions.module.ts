@@ -304,15 +304,32 @@ export class SessionsService {
       patch.name = await this.canonicalSessionCategoryName(patch.name);
     }
     Object.assign(type, patch);
-    return this.typeRepo.save(type);
+    const saved = await this.typeRepo.save(type);
+    if (type.kind !== 'standard') {
+      await this.clearFutureUnbookedSlotsForType(gymId, type.id);
+      await this.generateSlotsForGym(gymId, 30);
+    }
+    return saved;
   }
 
   async deleteSessionType(gymId: string, id: string) {
     const type = await this.typeRepo.findOne({ where: { id, gymId } });
     if (!type) throw new NotFoundException('Session type not found');
     if (type.kind === 'standard') throw new ForbiddenException('Cannot delete the standard Gym Workout type');
+    await this.clearFutureUnbookedSlotsForType(gymId, id);
     await this.typeRepo.remove(type);
     return { success: true };
+  }
+
+  private async clearFutureUnbookedSlotsForType(gymId: string, sessionTypeId: string) {
+    await this.slotRepo.createQueryBuilder()
+      .delete()
+      .from(SessionSlotEntity)
+      .where('"gymId" = :gymId', { gymId })
+      .andWhere('"sessionTypeId" = :sessionTypeId', { sessionTypeId })
+      .andWhere('date >= :today', { today: todayIST() })
+      .andWhere('"bookedCount" = 0')
+      .execute();
   }
 
   // ── Session Schedules (Recurring Rules) ──────────────────────────────────
@@ -340,6 +357,7 @@ export class SessionsService {
       rule = this.ruleRepo.create({ ...dto, gymId }) as any;
     }
     const saved = await this.ruleRepo.save(rule as any);
+    await this.clearFutureUnbookedSlotsForType(gymId, dto.sessionTypeId);
     await this.generateSlotsForGym(gymId, 30);
     return saved;
   }

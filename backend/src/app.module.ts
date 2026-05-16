@@ -33,7 +33,7 @@ import { UserEntity } from './database/entities/user.entity';
 import { GymEntity, MultiGymNetworkEntity } from './database/entities/gym.entity';
 import { ProductEntity } from './database/entities/store.entity';
 import { CorporateAccountEntity } from './database/entities/corporate.entity';
-import { WorkoutVideoEntity } from './database/entities/misc.entity';
+import { CategoryEntity, WorkoutVideoEntity } from './database/entities/misc.entity';
 import { GymSlotEntity } from './database/entities/gym-slot.entity';
 import { SlotBookingEntity } from './database/entities/slot-booking.entity';
 import { AppConfigEntity } from './database/entities/app-config.entity';
@@ -42,7 +42,7 @@ import { WellnessPartnerEntity, WellnessServiceEntity } from './database/entitie
 @Module({
   providers: [SeedService],
   imports: [
-    TypeOrmModule.forFeature([UserEntity, GymEntity, MultiGymNetworkEntity, ProductEntity, CorporateAccountEntity, WorkoutVideoEntity, GymSlotEntity, SlotBookingEntity, AppConfigEntity, GymScheduleEntity, SessionTypeEntity, SessionScheduleEntity, SessionSlotEntity, SessionBookingEntity, AttendanceEntity, WellnessPartnerEntity, WellnessServiceEntity]),
+    TypeOrmModule.forFeature([UserEntity, GymEntity, MultiGymNetworkEntity, ProductEntity, CorporateAccountEntity, WorkoutVideoEntity, CategoryEntity, GymSlotEntity, SlotBookingEntity, AppConfigEntity, GymScheduleEntity, SessionTypeEntity, SessionScheduleEntity, SessionSlotEntity, SessionBookingEntity, AttendanceEntity, WellnessPartnerEntity, WellnessServiceEntity]),
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['.env', '../.env'] }),
     TypeOrmModule.forRootAsync({
       useFactory: () => {

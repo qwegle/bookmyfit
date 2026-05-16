@@ -1,4 +1,5 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3003';
+const RAW_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3003';
+const BASE = RAW_BASE.replace(/\/api\/v1\/?$/i, '').replace(/\/$/, '');
 const TOKEN_KEY = 'bmf_admin_token';
 
 function getToken(): string | null {
@@ -22,16 +23,20 @@ async function request<T = any>(path: string, init: RequestInit = {}): Promise<T
       ...(init.headers || {}),
     },
   });
-  if (res.status === 401 || res.status === 403) {
+  if (res.status === 401) {
     localStorage.removeItem(TOKEN_KEY);
     redirectToLogin();
     throw new Error('Session expired');
   }
+  const raw = await res.text().catch(() => '');
+  const parsed = raw ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : null;
   if (!res.ok) {
-    const msg = await res.text().catch(() => res.statusText);
-    throw new Error(msg || `HTTP ${res.status}`);
+    const message = Array.isArray(parsed?.message)
+      ? parsed.message.join(', ')
+      : parsed?.message || raw || res.statusText || `HTTP ${res.status}`;
+    throw new Error(message);
   }
-  return res.json();
+  return (parsed ?? (raw ? raw : {})) as T;
 }
 
 export const api = {

@@ -45,15 +45,21 @@ export default function CategoriesPage() {
 
   const load = useCallback(async () => {
     try {
-      const [cats, amens] = await Promise.all([
+      const [catsResult, amensResult] = await Promise.allSettled([
         api.get('/master/categories'),
         api.get('/master/amenities/all'),
       ]);
+      if (catsResult.status === 'rejected') throw catsResult.reason;
+      const cats = catsResult.value;
+      const amens = amensResult.status === 'fulfilled' ? amensResult.value : [];
       const catArr: Category[] = Array.isArray(cats) ? cats : Array.isArray(cats?.data) ? cats.data : [];
       const amenArr: Amenity[] = Array.isArray(amens) ? amens : Array.isArray(amens?.data) ? amens.data : [];
       setCategories(catArr);
       setAmenities(amenArr.filter((a) => (a.status || 'approved') === 'approved' && a.isActive !== false));
       setPending(amenArr.filter((a) => a.status === 'pending'));
+      if (amensResult.status === 'rejected') {
+        toast(amensResult.reason?.message || 'Amenities could not load', 'error');
+      }
     } catch (e: any) {
       toast(e.message || 'Failed to load', 'error');
     } finally {
@@ -70,7 +76,7 @@ export default function CategoriesPage() {
       await api.post('/master/categories', { name: newCat.trim() });
       toast('Category added successfully');
       setNewCat('');
-      load();
+      await load();
     } catch (e: any) {
       toast(e.message || 'Failed to add category', 'error');
     } finally {
@@ -85,7 +91,7 @@ export default function CategoriesPage() {
       await api.post('/master/amenities', { name: newAmen.trim() });
       toast('Amenity added successfully');
       setNewAmen('');
-      load();
+      await load();
     } catch (e: any) {
       toast(e.message || 'Failed to add amenity', 'error');
     } finally {
@@ -97,7 +103,7 @@ export default function CategoriesPage() {
     try {
       await api.post(`/master/amenities/${id}/approve`);
       toast('Amenity request approved');
-      load();
+      await load();
     } catch (e: any) {
       toast(e.message || 'Failed to approve', 'error');
     }
@@ -117,7 +123,7 @@ export default function CategoriesPage() {
     try {
       await api.del(`/master/amenities/${id}`);
       toast('Amenity request rejected', 'info');
-      load();
+      await load();
     } catch (e: any) {
       toast(e.message || 'Failed to reject', 'error');
     }

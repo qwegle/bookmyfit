@@ -1,6 +1,7 @@
 import { Module, Controller, Get, Post, Put, Delete, Param, Body, Query, Injectable, BadRequestException, UseGuards, Req, NotFoundException } from '@nestjs/common';
 import { TypeOrmModule, InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
+import { IsNotEmpty, IsOptional, IsString, Length } from 'class-validator';
 import { paginate, paginatedResponse } from '../../common/pagination.helper';
 import { ApiTags } from '@nestjs/swagger';
 import {
@@ -88,6 +89,18 @@ class NotificationsService {
 }
 
 // ============ Master Data (categories, amenities) ============
+class CreateCategoryDto {
+  @IsString()
+  @IsNotEmpty()
+  @Length(1, 100)
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(1, 255)
+  iconUrl?: string;
+}
+
 @Injectable()
 class MasterDataService {
   constructor(
@@ -95,8 +108,20 @@ class MasterDataService {
     @InjectRepository(AmenityEntity) private readonly amenities: Repository<AmenityEntity>,
     @InjectRepository(GymEntity) private readonly gyms: Repository<GymEntity>,
   ) {}
-  listCategories() { return this.categories.find({ where: { isActive: true } }); }
-  createCategory(d: Partial<CategoryEntity>) { return this.categories.save(this.categories.create(d)); }
+  listCategories() { return this.categories.find({ where: { isActive: true }, order: { name: 'ASC' } }); }
+  async createCategory(d: Partial<CategoryEntity>) {
+    const clean = String(d.name ?? '').trim();
+    if (!clean) throw new BadRequestException('Category name is required');
+    const existing = await this.categories
+      .createQueryBuilder('c')
+      .where('LOWER(c.name) = LOWER(:name)', { name: clean })
+      .getOne();
+    if (existing) {
+      await this.categories.update(existing.id, { name: clean, iconUrl: d.iconUrl ?? existing.iconUrl, isActive: true });
+      return this.categories.findOne({ where: { id: existing.id } });
+    }
+    return this.categories.save(this.categories.create({ ...d, name: clean, isActive: true }));
+  }
   listAmenities(includeAll = false) {
     return this.amenities.find({
       where: includeAll ? {} : { isActive: true, status: 'approved' },
@@ -266,7 +291,7 @@ class MasterController {
   @Get('categories') cats() { return this.svc.listCategories(); }
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('super_admin')
-  @Post('categories') newCat(@Body() b: any) { return this.svc.createCategory(b); }
+  @Post('categories') newCat(@Body() b: CreateCategoryDto) { return this.svc.createCategory(b); }
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('super_admin')
   @Delete('categories/:id') delCat(@Param('id') id: string) { return this.svc.deleteCategory(id); }

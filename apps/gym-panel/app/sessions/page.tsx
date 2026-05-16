@@ -68,24 +68,39 @@ export default function SessionsPage() {
 
   const load = async () => {
     setLoading(true);
+    setError('');
     try {
-      const [types, scheds, cats] = await Promise.all([
+      const [typesResult, schedsResult, catsResult] = await Promise.allSettled([
         api.get('/sessions/session-types'),
         api.get('/sessions/session-schedules'),
         api.get('/master/categories'),
       ]);
+      if (typesResult.status === 'rejected') throw typesResult.reason;
+      if (schedsResult.status === 'rejected') throw schedsResult.reason;
+      const types = typesResult.value;
+      const scheds = schedsResult.value;
+      const cats = catsResult.status === 'fulfilled' ? catsResult.value : [];
       setSessionTypes(types || []);
       setSchedules(scheds || []);
       setCategories(Array.isArray(cats) ? cats : cats?.data || []);
-    } catch {}
-    setLoading(false);
+      if (catsResult.status === 'rejected') {
+        setError(catsResult.reason?.message || 'Failed to load session categories');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load sessions');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const loadBookings = async (date: string) => {
+    setError('');
     try {
       const data = await api.get(`/sessions/gym-bookings?date=${date}`);
       setBookings(data || []);
-    } catch {}
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load bookings');
+    }
   };
 
   useEffect(() => { load(); }, []);
@@ -98,12 +113,38 @@ export default function SessionsPage() {
     setShowAddForm(false);
   };
 
+  const startEditType = (type: SessionType) => {
+    const sched = getScheduleForType(type.id);
+    setEditingType(type);
+    setForm({
+      name: type.name,
+      description: type.description || '',
+      durationMinutes: type.durationMinutes,
+      maxCapacity: type.maxCapacity,
+      color: type.color || COLORS[1],
+      instructor: type.instructor || '',
+    });
+    setScheduleForm({
+      daysOfWeek: sched?.daysOfWeek ?? [],
+      startTime: sched?.startTime ?? '07:00',
+      endTime: sched?.endTime ?? '08:00',
+    });
+    setExpandedType(null);
+    setShowAddForm(true);
+  };
+
   const saveType = async () => {
     setError('');
     if (!form.name.trim()) { setError('Select a session category'); return; }
     try {
       if (editingType) {
         await api.put(`/sessions/session-types/${editingType.id}`, form);
+        if (scheduleForm.daysOfWeek.length > 0) {
+          await api.put('/sessions/session-schedules', {
+            sessionTypeId: editingType.id,
+            ...scheduleForm,
+          });
+        }
       } else {
         const created: SessionType = await api.post('/sessions/session-types', form);
         // Also save schedule if days were selected
@@ -235,6 +276,10 @@ export default function SessionsPage() {
                         )}
                         {type.kind !== 'standard' && (
                           <>
+                            <button onClick={() => startEditType(type)} title="Edit"
+                              style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.05)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.65)' }}>
+                              <Edit3 size={14} />
+                            </button>
                             <button onClick={() => toggleActive(type)} title={type.isActive ? 'Disable' : 'Enable'}
                               style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid rgba(255,255,255,0.1)', background: type.isActive ? 'rgba(61,255,84,0.1)' : 'rgba(255,255,255,0.05)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: type.isActive ? 'var(--accent)' : 'rgba(255,255,255,0.4)' }}>
                               <Zap size={14} />
@@ -305,7 +350,7 @@ export default function SessionsPage() {
           {showAddForm ? (
             <div className="glass" style={{ borderRadius: 16, padding: 24, borderColor: 'rgba(108,99,255,0.3)' }}>
               <h3 style={{ fontFamily: 'Playfair Display, serif', fontSize: 18, color: '#fff', marginBottom: 20, marginTop: 0 }}>
-                Add Special Session
+                {editingType ? 'Edit Special Session' : 'Add Special Session'}
               </h3>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
                 <div>
@@ -375,7 +420,7 @@ export default function SessionsPage() {
               </div>
 
               <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={saveType} className="btn-primary" style={{ padding: '10px 24px', borderRadius: 20, fontSize: 14 }}>Save Session</button>
+                <button onClick={saveType} className="btn-primary" style={{ padding: '10px 24px', borderRadius: 20, fontSize: 14 }}>{editingType ? 'Update Session' : 'Save Session'}</button>
                 <button onClick={resetForm} style={{ padding: '10px 20px', borderRadius: 20, fontSize: 14, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}>Cancel</button>
               </div>
             </div>

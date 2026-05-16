@@ -6,7 +6,7 @@ import { UserEntity } from './entities/user.entity';
 import { GymEntity } from './entities/gym.entity';
 import { ProductEntity } from './entities/store.entity';
 import { CorporateAccountEntity } from './entities/corporate.entity';
-import { WorkoutVideoEntity } from './entities/misc.entity';
+import { CategoryEntity, WorkoutVideoEntity } from './entities/misc.entity';
 import { WellnessPartnerEntity, WellnessServiceEntity } from './entities/wellness.entity';
 
 @Injectable()
@@ -18,6 +18,7 @@ export class SeedService implements OnApplicationBootstrap {
     @InjectRepository(ProductEntity) private products: Repository<ProductEntity>,
     @InjectRepository(CorporateAccountEntity) private corps: Repository<CorporateAccountEntity>,
     @InjectRepository(WorkoutVideoEntity) private videos: Repository<WorkoutVideoEntity>,
+    @InjectRepository(CategoryEntity) private categories: Repository<CategoryEntity>,
     @InjectRepository(WellnessPartnerEntity) private wellnessPartners: Repository<WellnessPartnerEntity>,
     @InjectRepository(WellnessServiceEntity) private wellnessServices: Repository<WellnessServiceEntity>,
   ) {}
@@ -33,6 +34,7 @@ export class SeedService implements OnApplicationBootstrap {
       return;
     }
     await this.seedUsers();
+    await this.seedCategories();
     await this.seedGyms();
     await this.seedBBSRGyms();
     await this.seedWellness();
@@ -71,6 +73,39 @@ export class SeedService implements OnApplicationBootstrap {
       }));
       this.log.log(`Seeded user: ${u.email} / ${u.password}`);
     }
+  }
+
+  private async seedCategories() {
+    const names = [
+      'Strength',
+      'Cardio',
+      'Yoga',
+      'CrossFit',
+      'HIIT',
+      'Zumba',
+      'Pilates',
+      'Weights',
+      'Pool',
+      'Boxing',
+      'MMA',
+      'Functional Training',
+      'Dance Fitness',
+    ];
+    for (const name of names) {
+      const existing = await this.categories
+        .createQueryBuilder('c')
+        .where('LOWER(c.name) = LOWER(:name)', { name })
+        .getOne();
+      if (existing) {
+        if (!existing.isActive) {
+          existing.isActive = true;
+          await this.categories.save(existing);
+        }
+        continue;
+      }
+      await this.categories.save(this.categories.create({ name, isActive: true }));
+    }
+    this.log.log(`Seeded/verified ${names.length} workout categories`);
   }
 
   private async seedGyms() {
